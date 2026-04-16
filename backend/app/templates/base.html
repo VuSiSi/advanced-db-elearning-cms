@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}E-Learning CMS{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+  <!-- ── Top navbar ───────────────────────────────── -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="/">E-Learning CMS</a>
+    <div class="navbar-links" id="nav-links">
+      <!-- Filled by app.js based on auth state -->
+    </div>
+  </nav>
+
+  <!-- ── Page content ─────────────────────────────── -->
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

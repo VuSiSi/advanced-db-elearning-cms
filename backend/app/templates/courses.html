@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Courses — E-Learning CMS{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Course Catalog</h1>
+  <button class="btn btn-primary" id="btn-create-course" style="display:none"
+          onclick="window.location.href='/courses/new'">
+    + New Course
+  </button>
+</div>
+
+<div class="course-grid" id="course-grid">
+  <div class="loading">Loading courses...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadCourses() {
+  const grid = document.getElementById('course-grid');
+  try {
+    const res    = await fetch('/api/courses/');
+    const courses = await res.json();
+
+    if (courses.length === 0) {
+      grid.innerHTML = '<p class="empty-state">No courses yet.</p>';
+      return;
+    }
+
+    grid.innerHTML = courses.map(c => `
+      <div class="course-card" onclick="window.location.href='/courses/${c.id}'">
+        <h3 class="course-card-title">${c.title}</h3>
+        <p class="course-card-desc">${c.description || 'No description'}</p>
+        <span class="badge">View course</span>
+      </div>
+    `).join('');
+  } catch (err) {
+    grid.innerHTML = '<p class="error-state">Failed to load courses.</p>';
+  }
+}
+
+// Show "New Course" button only for instructors
+const token = localStorage.getItem('token');
+if (token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.role === 'instructor') {
+      document.getElementById('btn-create-course').style.display = 'inline-block';
+    }
+  } catch {}
+}
+
+loadCourses();
+</script>
+{% endblock %}

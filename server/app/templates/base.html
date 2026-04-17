@@ -3,25 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>{% block title %}E-Learning CMS{% endblock %}</title>
+
+  <!-- CSS -->
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
+
 <body>
 
-  <!-- ── Top navbar ───────────────────────────────── -->
+  <!-- NAVBAR -->
   <nav class="navbar">
-    <a class="navbar-brand" href="/">E-Learning CMS</a>
-    <div class="navbar-links" id="nav-links">
-      <!-- Filled by app.js based on auth state -->
+    <div class="navbar-inner">
+      <a class="navbar-brand" href="/">E-Learning CMS</a>
+
+      <div class="navbar-links" id="nav-links">
+        <!-- JS inject -->
+      </div>
     </div>
   </nav>
 
-  <!-- ── Page content ─────────────────────────────── -->
-  <main class="main-content">
+  <!-- MAIN APP -->
+  <main class="app-container">
     {% block content %}{% endblock %}
   </main>
 
+  <!-- JS -->
   <script src="/static/js/app.js"></script>
   {% block scripts %}{% endblock %}
+
 </body>
 </html>

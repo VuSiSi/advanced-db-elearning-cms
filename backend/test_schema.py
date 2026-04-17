@@ -23,6 +23,8 @@ async def test_schema():
 
     print("=" * 50)
     print("Testing E-Learning CMS MongoDB Schema")
+    print(f"MongoDB URL: {MONGODB_URL}")
+    print(f"Database Name: {DB_NAME}")
     print("=" * 50)
 
     # Test 1: Insert a user

@@ -22,8 +22,11 @@ project/
 │   │   │   └── progress.py     ← Student progress (Day 3)
 │   │   ├── templates/          ← Jinja2 HTML (Day 2+)
 │   │   │   ├──
-│   │   └── static/             ← CSS + JS
-│   │       ├──
+│   │   ├── static/             ← CSS + JS
+│   │   |   ├── css/
+│   │   |   └── style.css
+│   │   └── js/
+│   │       └── app.js
 │   ├── test_schema.py          ← Thanh runs this on Day 1
 │   ├── requirements.txt
 │   └── .env

@@ -37,6 +37,25 @@ async def get_course(course_id: str):
     return _course_from_doc(doc)
 
 
+@router.get("/{course_id}/lessons/{lesson_id}")
+async def get_lesson(course_id: str, lesson_id: str):
+    """Get ONE lesson by lesson_id (for editor panel)."""
+    db = get_db()
+    try:
+        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course ID")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    for chapter in doc.get("chapters", []) or []:
+        for lesson in chapter.get("lessons", []) or []:
+            if lesson.get("lesson_id") == lesson_id:
+                return lesson
+
+    raise HTTPException(status_code=404, detail="Lesson not found")
+
+
 @router.post("/", status_code=201)
 async def create_course(
     course_in: CourseCreate,

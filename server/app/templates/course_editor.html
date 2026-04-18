@@ -7,12 +7,36 @@
   <!-- — LEFT: Course tree sidebar — -->
   <aside class="editor-sidebar">
     <div class="sidebar-header">
-      <h2 class="sidebar-title" id="course-title">Loading...</h2>
+      <h2 class="sidebar-title" id="course-title">{{ course.title if course else "Loading..." }}</h2>
       <button class="btn btn-sm" id="btn-add-chapter" type="button">+ Chapter</button>
     </div>
 
     <div class="tree-container" id="course-tree">
-      <div class="loading">Loading structure...</div>
+      {% if course %}
+        {% for ch in course.chapters %}
+          <div class="tree-chapter" id="ch-{{ ch.chapter_id|e }}">
+            <div class="tree-chapter-header" data-action="toggle-chapter">
+              <span class="tree-chevron" aria-hidden="true">▾</span>
+              <span class="tree-chapter-title">{{ ch.title }}</span>
+            </div>
+            <div class="tree-lessons">
+              {% for ls in ch.lessons %}
+                <div class="tree-lesson" data-action="select-lesson" data-lesson-id="{{ ls.lesson_id|e }}">
+                  <span class="lesson-icon" aria-hidden="true">
+                    {% if ls.type == "video" %}▶{% elif ls.type == "quiz" %}?{% else %}≡{% endif %}
+                  </span>
+                  <span class="lesson-title">{{ ls.title }}</span>
+                </div>
+              {% endfor %}
+              <div class="tree-add-lesson" role="button" tabindex="0" data-action="add-lesson" data-chapter-id="{{ ch.chapter_id|e }}">
+                + Add lesson
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="loading">Loading structure...</div>
+      {% endif %}
     </div>
   </aside>
 
@@ -30,35 +54,11 @@
 
 {% block scripts %}
 <script>
+window.__COURSE_ID__ = "{{ course.id if course else '' }}";
+
 // ================= STATE =================
 let currentLesson = null;
 let lessonIndex = {};
-
-// ================= MOCK DATA =================
-const MOCK_COURSE = {
-  id: 'mock-001',
-  title: 'Introduction to Python',
-  chapters: [
-    {
-      chapter_id: 'ch-1',
-      title: 'Getting Started',
-      order: 1,
-      lessons: [
-        { lesson_id: 'ls-1', title: 'What is Python?', type: 'video', order: 1 },
-        { lesson_id: 'ls-2', title: 'Chapter 1 Quiz',  type: 'quiz',  order: 2 },
-      ]
-    },
-    {
-      chapter_id: 'ch-2',
-      title: 'Variables & Types',
-      order: 2,
-      lessons: [
-        { lesson_id: 'ls-3', title: 'Variables', type: 'document', order: 1 },
-        { lesson_id: 'ls-4', title: 'Data Types', type: 'video',   order: 2 },
-      ]
-    }
-  ]
-};
 
 const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
 
@@ -108,40 +108,79 @@ function renderTree(course) {
 }
 
 // ================= SELECT LESSON =================
-function selectLesson(lessonId, clickedEl) {
-  const meta = lessonIndex[lessonId];
-  if (!meta) return;
+async function selectLesson(lessonId, clickedEl) {
+  const courseId = window.__COURSE_ID__ || '';
+  if (!courseId) return;
 
   document.querySelectorAll('.tree-lesson').forEach(e => e.classList.remove('active'));
   if (clickedEl) clickedEl.classList.add('active');
 
-  currentLesson = { lessonId, type: meta.type, title: meta.title };
-
   const panel = document.getElementById('content-panel');
-  if (meta.type === 'video') {
-    panel.innerHTML = `
-      <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-video">Video</span></div>
-      <div class="form-group"><label>Video URL</label><input type="text" placeholder="https://..." /></div>
-      <div class="form-group"><label>Duration (seconds)</label><input type="number" placeholder="300" /></div>
-      <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
-    `;
-  } else if (meta.type === 'quiz') {
-    panel.innerHTML = `
-      <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-quiz">Quiz</span></div>
-      <p class="muted">Quiz editor — Day 4 (Quyen)</p>
-    `;
-  } else {
+  panel.innerHTML = '<div class="loading">Loading lesson...</div>';
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}/lessons/${encodeURIComponent(lessonId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to load lesson');
+
+    const meta = data;
+    currentLesson = { lessonId: meta.lesson_id, type: meta.type, title: meta.title };
+
+    if (meta.type === 'video') {
+      panel.innerHTML = `
+        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-video">Video</span></div>
+        <div class="form-group"><label>Video URL</label><input type="text" value="${escapeHtml(meta.video_url || '')}" placeholder="https://..." /></div>
+        <div class="form-group"><label>Duration (seconds)</label><input type="number" value="${meta.duration_seconds ?? ''}" placeholder="300" /></div>
+        <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
+      `;
+      return;
+    }
+
+    if (meta.type === 'quiz') {
+      panel.innerHTML = `
+        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-quiz">Quiz</span></div>
+        <p class="muted">Quiz editor — Day 4 (Quyen)</p>
+      `;
+      return;
+    }
+
     panel.innerHTML = `
       <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-doc">Document</span></div>
-      <div class="form-group"><label>Content</label><textarea rows="12" placeholder="Write content here..."></textarea></div>
+      <div class="form-group"><label>Content</label><textarea rows="12" placeholder="Write content here...">${escapeHtml(meta.content || '')}</textarea></div>
       <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
     `;
+  } catch (err) {
+    panel.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message || String(err))}</div>`;
   }
+}
+
+async function refreshCourseTree() {
+  const courseId = window.__COURSE_ID__ || '';
+  if (!courseId) return;
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to load course');
+    renderTree(data);
+  } catch (err) {
+      console.warn("Failed to refresh course:", err);
+  }
+}
+
+// (Legacy) keep a sync alias for other onclick usage if any
+function selectLessonSync(lessonId) {
+  const el = document.querySelector(`.tree-lesson[data-lesson-id="${CSS.escape(lessonId)}"]`);
+  selectLesson(lessonId, el);
 }
 
 // ================= SAVE =================
 function saveLesson() {
   if (!currentLesson) return;
+
+  const meta = lessonIndex[currentLesson.lessonId];
+  if (!meta) return;
+
   alert('TODO Day 2: Save lesson ' + currentLesson.lessonId);
 }
 
@@ -214,10 +253,8 @@ function initCourseEditor() {
   const btnAddChapter = document.getElementById('btn-add-chapter');
   if (btnAddChapter) btnAddChapter.addEventListener('click', addChapter);
 
-  // Load mock data on Day 1, switch to real API on Day 2
-  renderTree(MOCK_COURSE);
 }
 
-initCourseEditor();
+document.addEventListener('DOMContentLoaded', initCourseEditor);
 </script>
 {% endblock %}

@@ -1,10 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 from app.database import connect_db, close_db
-from app.routes import auth, courses, progress #, pages         # REMEMBER TO UNCOMMENT THIS BEFORE FINAL SUBMISSION
+from app.routes import auth, courses, progress, pages         
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,25 +22,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Routers
-#app.include_router(pages.router) # REMEMBER TO UNCOMMENT THIS BEFORE FINAL SUBMISSION
+app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(courses.router)
 app.include_router(progress.router)
-
-@app.get("/")
-async def root():
-    return {"message": "E-Learning CMS API is running"}
-
-templates = Jinja2Templates(directory="app/templates")
-
-@app.get("/login")
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-@app.get("/courses")
-async def courses_page(request: Request):
-    return templates.TemplateResponse("courses.html", {"request": request})
-
-@app.get("/courses/new")
-async def course_editor(request: Request):
-    return templates.TemplateResponse("course_editor.html", {"request": request})

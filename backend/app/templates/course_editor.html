@@ -126,7 +126,54 @@ function addLesson(chapterId) {
   alert('TODO Day 2: POST /api/courses/:id/chapters/:ch/lessons — ' + name);
 }
 
-// Load mock data on Day 1, switch to real API on Day 2
-renderTree(MOCK_COURSE);
-</script>
-{% endblock %}
+const courseId = "{{ course_id }}";  // Jinja2 inject from pages.py
+
+async function loadCourse() {
+  try {
+    const res = await fetch(`/api/courses/${courseId}`, {
+      headers: authHeaders()  // helper available in app.js
+    });
+    if (!res.ok) throw new Error("Failed to load course");
+    const course = await res.json();
+    renderTree(course);
+  } catch (err) {
+    document.getElementById('course-tree').innerHTML =
+      `<p class="error-state">${err.message}</p>`;
+  }
+}
+
+// Wire up real API for addChapter
+async function addChapter() {
+  const title = prompt('Chapter title:');
+  if (!title) return;
+  const res = await fetch(`/api/courses/${courseId}/chapters`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ title, order: 0 })
+  });
+  if (res.ok) loadCourse();  // re-render tree after adding
+}
+
+// Wire up real API for addLesson
+async function addLesson(chapterId) {
+  const title = prompt('Lesson title:');
+  if (!title) return;
+  const type  = prompt('Type (video / quiz / document):');
+  if (!['video','quiz','document'].includes(type)) {
+    alert('Invalid type'); return;
+  }
+  // Send minimal required fields per type
+  const body = { title, order: 0, type,
+    ...(type === 'video'    && { video_url: 'https://placeholder.com', duration_seconds: 0 }),
+    ...(type === 'document' && { content: '# New lesson' }),
+    ...(type === 'quiz'     && { questions: [] }),
+  };
+  const res = await fetch(`/api/courses/${courseId}/chapters/${chapterId}/lessons`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body)
+  });
+  if (res.ok) loadCourse();
+}
+
+loadCourse();  // kick off on page load — replaces renderTree(MOCK_COURSE)

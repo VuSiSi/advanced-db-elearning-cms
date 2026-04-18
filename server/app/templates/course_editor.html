@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}Course Editor — E-Learning CMS{% endblock %}
+
+{% block content %}
+<div class="editor-layout">
+
+  <!-- — LEFT: Course tree sidebar — -->
+  <aside class="editor-sidebar">
+    <div class="sidebar-header">
+      <h2 class="sidebar-title" id="course-title">{{ course.title if course else "Loading..." }}</h2>
+      <button class="btn btn-sm" id="btn-add-chapter" type="button">+ Chapter</button>
+    </div>
+
+    <div class="tree-container" id="course-tree">
+      {% if course %}
+        {% for ch in course.chapters %}
+          <div class="tree-chapter" id="ch-{{ ch.chapter_id|e }}">
+            <div class="tree-chapter-header" data-action="toggle-chapter">
+              <span class="tree-chevron" aria-hidden="true">▾</span>
+              <span class="tree-chapter-title">{{ ch.title }}</span>
+            </div>
+            <div class="tree-lessons">
+              {% for ls in ch.lessons %}
+                <div class="tree-lesson" data-action="select-lesson" data-lesson-id="{{ ls.lesson_id|e }}">
+                  <span class="lesson-icon" aria-hidden="true">
+                    {% if ls.type == "video" %}▶{% elif ls.type == "quiz" %}?{% else %}≡{% endif %}
+                  </span>
+                  <span class="lesson-title">{{ ls.title }}</span>
+                </div>
+              {% endfor %}
+              <div class="tree-add-lesson" role="button" tabindex="0" data-action="add-lesson" data-chapter-id="{{ ch.chapter_id|e }}">
+                + Add lesson
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="loading">Loading structure...</div>
+      {% endif %}
+    </div>
+  </aside>
+
+  <!-- — RIGHT: Lesson content panel — -->
+  <section class="editor-content">
+    <div id="content-panel">
+      <div class="empty-state">
+        <p>Select a lesson from the left to view or edit its content.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.__COURSE_ID__ = "{{ course.id if course else '' }}";
+
+// ================= STATE =================
+let currentLesson = null;
+let lessonIndex = {};
+
+const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildLessonIndex(course) {
+  const index = {};
+  for (const chapter of course.chapters || []) {
+    for (const lesson of chapter.lessons || []) {
+      index[lesson.lesson_id] = { ...lesson };
+    }
+  }
+  return index;
+}
+
+function renderTree(course) {
+  lessonIndex = buildLessonIndex(course);
+  document.getElementById('course-title').textContent = course.title;
+  const tree = document.getElementById('course-tree');
+
+  tree.innerHTML = (course.chapters || []).map(ch => `
+    <div class="tree-chapter" id="ch-${escapeHtml(ch.chapter_id)}">
+      <div class="tree-chapter-header" data-action="toggle-chapter">
+        <span class="tree-chevron" aria-hidden="true">▾</span>
+        <span class="tree-chapter-title">${escapeHtml(ch.title)}</span>
+      </div>
+      <div class="tree-lessons">
+        ${(ch.lessons || []).map(ls => `
+          <div class="tree-lesson" data-action="select-lesson" data-lesson-id="${escapeHtml(ls.lesson_id)}">
+            <span class="lesson-icon" aria-hidden="true">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
+            <span class="lesson-title">${escapeHtml(ls.title)}</span>
+          </div>
+        `).join('')}
+        <div class="tree-add-lesson" role="button" tabindex="0" data-action="add-lesson" data-chapter-id="${escapeHtml(ch.chapter_id)}">
+          + Add lesson
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ================= SELECT LESSON =================
+async function selectLesson(lessonId, clickedEl) {
+  const courseId = window.__COURSE_ID__ || '';
+  if (!courseId) return;
+
+  document.querySelectorAll('.tree-lesson').forEach(e => e.classList.remove('active'));
+  if (clickedEl) clickedEl.classList.add('active');
+
+  const panel = document.getElementById('content-panel');
+  panel.innerHTML = '<div class="loading">Loading lesson...</div>';
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}/lessons/${encodeURIComponent(lessonId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to load lesson');
+
+    const meta = data;
+    currentLesson = { lessonId: meta.lesson_id, type: meta.type, title: meta.title };
+
+    if (meta.type === 'video') {
+      panel.innerHTML = `
+        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-video">Video</span></div>
+        <div class="form-group"><label>Video URL</label><input type="text" value="${escapeHtml(meta.video_url || '')}" placeholder="https://..." /></div>
+        <div class="form-group"><label>Duration (seconds)</label><input type="number" value="${meta.duration_seconds ?? ''}" placeholder="300" /></div>
+        <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
+      `;
+      return;
+    }
+
+    if (meta.type === 'quiz') {
+      panel.innerHTML = `
+        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-quiz">Quiz</span></div>
+        <p class="muted">Quiz editor — Day 4 (Quyen)</p>
+      `;
+      return;
+    }
+
+    panel.innerHTML = `
+      <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-doc">Document</span></div>
+      <div class="form-group"><label>Content</label><textarea rows="12" placeholder="Write content here...">${escapeHtml(meta.content || '')}</textarea></div>
+      <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
+    `;
+  } catch (err) {
+    panel.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+async function refreshCourseTree() {
+  const courseId = window.__COURSE_ID__ || '';
+  if (!courseId) return;
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to load course');
+    renderTree(data);
+  } catch (err) {
+      console.warn("Failed to refresh course:", err);
+  }
+}
+
+// (Legacy) keep a sync alias for other onclick usage if any
+function selectLessonSync(lessonId) {
+  const el = document.querySelector(`.tree-lesson[data-lesson-id="${CSS.escape(lessonId)}"]`);
+  selectLesson(lessonId, el);
+}
+
+// ================= SAVE =================
+function saveLesson() {
+  if (!currentLesson) return;
+
+  const meta = lessonIndex[currentLesson.lessonId];
+  if (!meta) return;
+
+  alert('TODO Day 2: Save lesson ' + currentLesson.lessonId);
+}
+
+// ================= TREE TOGGLE =================
+function toggleChapter(el) {
+  const lessons = el.nextElementSibling;
+  const icon = el.querySelector('.tree-chevron');
+  if (!lessons || !icon) return;
+
+  if (lessons.classList.contains('hidden')) {
+    lessons.classList.remove('hidden');
+    icon.textContent = '▾';
+  } else {
+    lessons.classList.add('hidden');
+    icon.textContent = '▸';
+  }
+}
+
+// ================= ADD =================
+function addChapter() {
+  const name = prompt('Chapter title:');
+  if (!name) return;
+  alert('TODO Day 2: POST /api/courses/:id/chapters — ' + name);
+}
+
+function addLesson(chapterId) {
+  const name = prompt('Lesson title:');
+  if (!name) return;
+  alert('TODO Day 2: POST /api/courses/:id/chapters/:ch/lessons — ' + name);
+}
+
+function initCourseEditor() {
+  const tree = document.getElementById('course-tree');
+  if (!tree) return;
+
+  tree.addEventListener('click', (e) => {
+    const saveBtn = e.target.closest('[data-action="save-lesson"]');
+    if (saveBtn) {
+      saveLesson();
+      return;
+    }
+
+    const lessonEl = e.target.closest('.tree-lesson');
+    if (lessonEl && tree.contains(lessonEl)) {
+      selectLesson(lessonEl.dataset.lessonId, lessonEl);
+      return;
+    }
+
+    const headerEl = e.target.closest('.tree-chapter-header');
+    if (headerEl && tree.contains(headerEl)) {
+      toggleChapter(headerEl);
+      return;
+    }
+
+    const addLessonEl = e.target.closest('.tree-add-lesson');
+    if (addLessonEl && tree.contains(addLessonEl)) {
+      addLesson(addLessonEl.dataset.chapterId);
+    }
+  });
+
+  tree.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const addLessonEl = e.target.closest('.tree-add-lesson');
+    if (addLessonEl && tree.contains(addLessonEl)) {
+      e.preventDefault();
+      addLesson(addLessonEl.dataset.chapterId);
+    }
+  });
+
+  const btnAddChapter = document.getElementById('btn-add-chapter');
+  if (btnAddChapter) btnAddChapter.addEventListener('click', addChapter);
+
+}
+
+document.addEventListener('DOMContentLoaded', initCourseEditor);
+</script>
+{% endblock %}

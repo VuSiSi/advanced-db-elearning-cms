@@ -3,7 +3,7 @@ from app.models import CourseCreate, ChapterCreate, Chapter, LessonCreate, Lesso
 from app.middleware.auth import get_current_user, require_instructor, TokenData
 from app.database import get_db
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -32,8 +32,8 @@ async def create_course(
         **course_in.model_dump(),
         "instructor_id": token_data.user_id,
         "chapters": [],
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
     result = await db.courses.insert_one(doc)
     doc["id"] = str(result.inserted_id)
@@ -55,6 +55,32 @@ async def get_course(course_id: str):
     return _course_from_doc(doc)
 
 # PUT /api/courses/{course_id}
+@router.put("/{course_id}")
+async def update_course(
+    course_id: str,
+    course_in: CourseCreate,
+    token_data: TokenData = Depends(require_instructor),
+):
+    # Update course title/description. Instructor only.
+    db = get_db()
+    try:
+        oid = ObjectId(course_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course ID")
+
+    result = await db.courses.update_one(
+        {"_id": oid, "instructor_id": token_data.user_id},
+        {
+            "$set": {
+                "title": course_in.title,
+                "description": course_in.description,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return {"message": "Course updated"}
 
 # POST /api/courses/{course_id}/chapters
 @router.post("/{course_id}/chapters", status_code=201)
@@ -75,7 +101,7 @@ async def add_chapter(
         {"_id": oid},
         {
             "$push": {"chapters": chapter.model_dump()},
-            "$set":  {"updated_at": datetime.utcnow()},
+            "$set":  {"updated_at": datetime.now(timezone.utc)},
         }
     )
     if result.matched_count == 0:
@@ -108,7 +134,7 @@ async def add_lesson(
         {"_id": ObjectId(course_id), "chapters.chapter_id": chapter_id},
         {
             "$push": {"chapters.$.lessons": lesson.model_dump()},
-            "$set":  {"updated_at": datetime.utcnow()},
+            "$set":  {"updated_at": datetime.now(timezone.utc)},
         }
     )
     if result.matched_count == 0:
@@ -116,6 +142,38 @@ async def add_lesson(
     return lesson.model_dump()
 
 # PUT /api/courses/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}
+@router.put("/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}")
+async def update_lesson(
+    course_id: str,
+    chapter_id: str,
+    lesson_id: str,
+    lesson_in: LessonCreate,
+    token_data: TokenData = Depends(require_instructor),
+):
+    # Update a lesson's content. Validates lesson type vs fields.
+    db = get_db()
+    result = await db.courses.update_one(
+        {
+            "_id": ObjectId(course_id),
+            "chapters.chapter_id": chapter_id,
+            "chapters.lessons.lesson_id": lesson_id
+        },
+        {
+            "$set": {
+                "chapters.$[ch].lessons.$[ls].title": lesson_in.title,
+                "chapters.$[ch].lessons.$[ls].type": lesson_in.type,
+                "chapters.$[ch].lessons.$[ls].video_url": lesson_in.video_url,
+                "chapters.$[ch].lessons.$[ls].duration_seconds": lesson_in.duration_seconds,
+                "chapters.$[ch].lessons.$[ls].content": lesson_in.content,
+                "chapters.$[ch].lessons.$[ls].questions": lesson_in.questions,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+        array_filters=[
+            {"ch.chapter_id": chapter_id},
+            {"lsn.lesson_id": lesson_id}
+        ]
+    )
 
 # DELETE /api/courses/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}
 

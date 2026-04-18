@@ -11,6 +11,7 @@ def _progress_from_doc(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))
     return doc
 
+# GET /api/progress/{student_id}/{course_id}
 @router.get("/{student_id}/{course_id}")
 async def get_progress(
     student_id: str,
@@ -30,6 +31,7 @@ async def get_progress(
         return {"student_id": student_id, "course_id": course_id, "lesson_completions": [], "overall_progress_pct": 0.0}
     return _progress_from_doc(progress)
 
+# POST /api/progress/complete
 @router.post("/complete")
 async def mark_lesson_complete(
     student_id: str,

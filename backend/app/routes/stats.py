@@ -5,7 +5,7 @@ from bson import ObjectId
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
-
+# GET /api/stats/course/{course_id}
 @router.get("/course/{course_id}")
 async def get_course_stats(
     course_id: str,

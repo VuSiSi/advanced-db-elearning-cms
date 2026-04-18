@@ -20,18 +20,13 @@ class LessonBase(BaseModel):
     # quiz fields
     questions: Optional[List[QuizQuestion]] = None
 
-
 class LessonCreate(LessonBase):
     pass
-
 
 class Lesson(LessonBase):
     lesson_id: str = Field(default_factory=lambda: str(__import__('uuid').uuid4()))
 
-
-# ─────────────────────────────────────────────
 # CHAPTER  (embedded inside Course)
-# ─────────────────────────────────────────────
 class ChapterBase(BaseModel):
     title: str
     order: int
@@ -69,6 +64,10 @@ class UserCreate(UserBase):
 class UserInDB(UserBase):
     hashed_password: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class UserOut(UserBase):
     id: str

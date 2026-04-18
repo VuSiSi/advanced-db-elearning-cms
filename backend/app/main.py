@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.database import connect_db, close_db
-from app.routes import auth, courses, progress, pages         
+from app.routes import auth, courses, progress, pages, stats        
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,3 +26,4 @@ app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(courses.router)
 app.include_router(progress.router)
+app.include_router(stats.router)

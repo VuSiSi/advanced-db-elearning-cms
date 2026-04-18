@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from app.models import CourseCreate, ChapterCreate, Chapter, LessonCreate, Lesson
 from app.middleware.auth import get_current_user, require_instructor, TokenData
 from app.database import get_db
@@ -109,6 +110,29 @@ async def add_chapter(
     return chapter.model_dump()
 
 # DELETE /api/courses/{course_id}/chapters/{chapter_id}
+@router.delete("/{course_id}/chapters/{chapter_id}", status_code=204)
+async def delete_chapter(
+    course_id: str,
+    chapter_id: str,
+    token_data: TokenData = Depends(require_instructor)
+):
+    # Delete a chapter (and all its lessons). Instructor only.
+    db = get_db()
+    try:
+        oid = ObjectId(course_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course ID")
+
+    result = await db.courses.update_one(
+        {"_id": oid},
+        {
+            "$pull": {"chapters": {"chapter_id": chapter_id}},
+            "$set": {"updated_at": datetime.now(timezone.utc)}
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return {"message": "Chapter deleted"}
 
 # POST /api/courses/{course_id}/chapters/{chapter_id}/lessons
 @router.post("/{course_id}/chapters/{chapter_id}/lessons", status_code=201)
@@ -179,5 +203,49 @@ async def update_lesson(
     return {"message": "Lesson updated"}
 
 # DELETE /api/courses/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}
+@router.delete("/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}", status_code=204)
+async def delete_lesson(
+    course_id: str,
+    chapter_id: str,
+    lesson_id: str,
+    token_data: TokenData = Depends(require_instructor),
+):
+    db = get_db()
+    result = await db.courses.update_one(
+        {
+            "_id": ObjectId(course_id), 
+            "chapters.chapter_id": chapter_id
+        },
+        {
+            "$pull": {"chapters.$.lessons": {"lesson_id": lesson_id}},
+            "$set": {"updated_at": datetime.now(timezone.utc)}
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course, chapter, or lesson not found")
+    return {"message": "Lesson deleted"}
 
 # PUT /api/courses/{course_id}/reorder
+class ReorderRequest(BaseModel):
+    chapters: list
+
+@router.put("/{course_id}/reorder")
+async def reorder_course(
+    course_id: str,
+    reorder_in: ReorderRequest,
+    token_data: TokenData = Depends(require_instructor),
+):
+    # Reorder chapters and lessons based on the provided structure.
+    db = get_db()
+    result = await db.courses.update_one(
+        {"_id": ObjectId(course_id)},
+        {
+            "$set": {
+                "chapters": reorder_in.chapters,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return {"message": "Course reordered"}

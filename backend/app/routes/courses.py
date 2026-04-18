@@ -174,6 +174,9 @@ async def update_lesson(
             {"lsn.lesson_id": lesson_id}
         ]
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course, chapter, or lesson not found")
+    return {"message": "Lesson updated"}
 
 # DELETE /api/courses/{course_id}/chapters/{chapter_id}/lessons/{lesson_id}
 

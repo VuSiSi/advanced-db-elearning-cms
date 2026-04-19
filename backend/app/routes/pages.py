@@ -28,7 +28,10 @@ async def courses_page(request: Request):
 @router.get("/courses/new", include_in_schema=False)
 async def new_course_page(request: Request):
     """Course editor — create a new course (instructor only)."""
-    return templates.TemplateResponse("course_editor.html", {"request": request})
+    return templates.TemplateResponse(
+        "course_editor.html",
+        {"request": request, "course_id": ""},
+    )
 
 
 @router.get("/courses/{course_id}", include_in_schema=False)
@@ -52,3 +55,7 @@ async def lesson_view_page(request: Request):
 @router.get("/progress", include_in_schema=False)
 async def progress_page(request: Request):
     return templates.TemplateResponse("progress.html", {"request": request})
+
+@router.get("/analytics", include_in_schema=False)
+async def analytics_page(request: Request):
+    return templates.TemplateResponse("analytics.html", {"request": request})

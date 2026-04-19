@@ -73,9 +73,13 @@ function renderTree(course) {
       </div>
       <div class="tree-lessons">
         ${ch.lessons.map(ls => `
-          <div class="tree-lesson" onclick="selectLesson('${ls.lesson_id}', '${ls.type}', '${ls.title}')">
+          <div class="tree-lesson" 
+              data-lesson-id="${ls.lesson_id}"
+              data-chapter-id="${ch.chapter_id}"
+              draggle="true"
+              onclick="selectLesson('${ls.lesson_id}', '${ls.type}', '${ls.title}')">
             <span class="lesson-icon">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
-            <span class="lesson-title">${ls.title}</span>
+            <span>${ls.title}</span>
           </div>
         `).join('')}
         <div class="tree-add-lesson" onclick="addLesson('${ch.chapter_id}')">
@@ -86,30 +90,104 @@ function renderTree(course) {
   `).join('');
 }
 
-function selectLesson(lessonId, type, title) {
-  // Remove active state from all lessons
-  document.querySelectorAll('.tree-lesson').forEach(el => el.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+function enableDragDrop(course) {
+  let dragSrcId = null;
+  let dragSrcChapter = null;
 
-  // Render content panel based on lesson type
+  document.querySelectorAll('.tree-lesson').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragSrcId      = el.dataset.lessonId;
+      dragSrcChapter = el.dataset.chapterId;
+      el.style.opacity = '0.4';
+    });
+
+    el.addEventListener('dragend', e => {
+      el.style.opacity = '1';
+    });
+
+    el.addEventListener('dragover', e => {
+      e.preventDefault();  // allow drop
+    });
+
+    el.addEventListener('drop', async e => {
+      e.preventDefault();
+      const dropId      = el.dataset.lessonId;
+      const dropChapter = el.dataset.chapterId;
+
+      // Only reorder within the same chapter for simplicity
+      if (dragSrcChapter !== dropChapter) return;
+
+      // Rebuild chapters array with swapped lesson order
+      const updatedChapters = course.chapters.map(ch => {
+        if (ch.chapter_id !== dragSrcChapter) return ch;
+        const lessons = [...ch.lessons];
+        const srcIdx  = lessons.findIndex(l => l.lesson_id === dragSrcId);
+        const dstIdx  = lessons.findIndex(l => l.lesson_id === dropId);
+        // Swap positions
+        [lessons[srcIdx], lessons[dstIdx]] = [lessons[dstIdx], lessons[srcIdx]];
+        return { ...ch, lessons };
+      });
+
+      // Call reorder API
+      await fetch(`/api/courses/${courseId}/reorder`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ chapters: updatedChapters })
+      });
+
+      loadCourse();  // refresh tree to reflect new order
+    });
+  });
+}
+
+function selectLesson(lessonId, chapterId, type, title) {
   const panel = document.getElementById('content-panel');
+
   if (type === 'video') {
     panel.innerHTML = `
-      <div class="content-header"><h3>${title}</h3><span class="badge badge-video">Video</span></div>
-      <div class="form-group"><label>Video URL</label><input type="text" placeholder="https://..." /></div>
-      <div class="form-group"><label>Duration (seconds)</label><input type="number" placeholder="300" /></div>
-      <button class="btn btn-primary">Save</button>
+      <div class="content-header">
+        <h3>${title}</h3>
+        <span class="badge badge-video">Video</span>
+      </div>
+      <div class="form-group">
+        <label>Video URL</label>
+        <input type="text" id="video-url" placeholder="https://..." />
+      </div>
+      <div class="form-group">
+        <label>Duration (seconds)</label>
+        <input type="number" id="duration" placeholder="300" />
+      </div>
+      <button class="btn btn-primary"
+        onclick="saveLesson('${lessonId}', '${chapterId}', 'video')">
+        Save
+      </button>
+      <span id="save-status" style="font-size:13px;margin-left:12px"></span>
     `;
+
+  } else if (type === 'document') {
+    panel.innerHTML = `
+      <div class="content-header">
+        <h3>${title}</h3>
+        <span class="badge badge-doc">Document</span>
+      </div>
+      <div class="form-group">
+        <label>Content</label>
+        <textarea id="content" rows="12" placeholder="Write content here..."></textarea>
+      </div>
+      <button class="btn btn-primary"
+        onclick="saveLesson('${lessonId}', '${chapterId}', 'document')">
+        Save
+      </button>
+      <span id="save-status" style="font-size:13px;margin-left:12px"></span>
+    `;
+
   } else if (type === 'quiz') {
     panel.innerHTML = `
-      <div class="content-header"><h3>${title}</h3><span class="badge badge-quiz">Quiz</span></div>
-      <p class="muted">Quiz editor — Day 4 (Quyen)</p>
-    `;
-  } else {
-    panel.innerHTML = `
-      <div class="content-header"><h3>${title}</h3><span class="badge badge-doc">Document</span></div>
-      <div class="form-group"><label>Content</label><textarea rows="12" placeholder="Write content here..."></textarea></div>
-      <button class="btn btn-primary">Save</button>
+      <div class="content-header">
+        <h3>${title}</h3>
+        <span class="badge badge-quiz">Quiz</span>
+      </div>
+      <p class="muted">Quiz editor — Day 4</p>
     `;
   }
 }
@@ -129,6 +207,8 @@ function addLesson(chapterId) {
 const courseId = "{{ course_id }}";  // Jinja2 inject from pages.py
 
 async function loadCourse() {
+  document.getElementById('course-tree').innerHTML =
+    `<div class="loading">Loading structure...</div>`;
   try {
     const res = await fetch(`/api/courses/${courseId}`, {
       headers: authHeaders()  // helper available in app.js
@@ -174,6 +254,37 @@ async function addLesson(chapterId) {
     body: JSON.stringify(body)
   });
   if (res.ok) loadCourse();
+}
+
+async function saveLesson(lessonId, chapterId, type) {
+  const statusEl = document.getElementById('save-status');
+  statusEl.textContent = 'Saving...';
+
+  // Collect fields based on lesson type
+  let body = { title: '', order: 0, type };
+  if (type === 'video') {
+    body.video_url        = document.getElementById('video-url').value;
+    body.duration_seconds = parseInt(document.getElementById('duration').value) || 0;
+    body.title            = body.video_url ? 'Video Lesson' : 'Untitled';
+  } else if (type === 'document') {
+    body.content = document.getElementById('content').value;
+    body.title   = 'Document Lesson';
+  }
+
+  const res = await fetch(
+    `/api/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}`,
+    { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) }
+  );
+
+  if (res.ok) {
+    statusEl.style.color = 'var(--teal-600)';
+    statusEl.textContent = 'Saved!';
+    setTimeout(() => statusEl.textContent = '', 2000);
+    loadCourse();  // refresh tree bên trái
+  } else {
+    statusEl.style.color = '#A32D2D';
+    statusEl.textContent = 'Save failed.';
+  }
 }
 
 loadCourse();  // kick off on page load — replaces renderTree(MOCK_COURSE)

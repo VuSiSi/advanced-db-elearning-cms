@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from app.middleware.auth import require_instructor, TokenData
 from app.database import get_db
@@ -12,22 +13,21 @@ async def get_course_stats(
     token_data: TokenData = Depends(require_instructor),
 ):
     """
-    Thống kê tổng quan cho một khoá học — instructor only.
+    Course overview statistics — instructor only.
 
-    Trả về:
-    - total_students   : số học viên đã enroll
-    - avg_progress_pct : tiến độ trung bình (%)
-    - completion_rate  : tỉ lệ học viên hoàn thành 100% (%)
-    - avg_quiz_score   : điểm quiz trung bình (loại bỏ NULL — video/doc)
-    - per_lesson_stats : số lượt hoàn thành + điểm TB cho từng bài quiz
+    Returns:
+    - total_students   : number of enrolled students
+    - avg_progress_pct : average progress across all students (%)
+    - completion_rate  : percentage of students who reached 100% (%)
+    - avg_quiz_score   : average quiz score, NULL scores (video/doc) excluded
+    - per_lesson_stats : completion count + avg score per lesson
 
     === MONGODB AGGREGATION PIPELINE ===
-    Pipeline này chạy hoàn toàn trong DB, không kéo raw data lên Python.
-    Đây là điểm mạnh cốt lõi của MongoDB so với SQL JOIN thủ công.
+    Both pipelines run entirely inside the DB — no raw data pulled into Python.
+    This is a core advantage of MongoDB over manual SQL JOINs.
     """
     db = get_db()
 
-    # Xác nhận course tồn tại
     try:
         oid = ObjectId(course_id)
     except Exception:
@@ -38,60 +38,48 @@ async def get_course_stats(
         raise HTTPException(status_code=404, detail="Course not found")
 
     # ─────────────────────────────────────────────
-    # PIPELINE 1: Tổng quan khoá học
+    # PIPELINE 1: Course overview
     # Input collection: student_progress
     # ─────────────────────────────────────────────
     overview_pipeline = [
-        # Stage 1: Lọc chỉ lấy progress của course này
+        # Stage 1: Filter to this course only
         {"$match": {"course_id": course_id}},
 
-        # Stage 2: Giải nén mảng lesson_completions thành từng document riêng
-        # (để tính điểm quiz từng bài)
+        # Stage 2: Unwind lesson_completions array into individual documents.
+
         {"$unwind": {
             "path": "$lesson_completions",
-            "preserveNullAndEmpty": True   # giữ lại student chưa học bài nào
+            "preserveNullAndEmptyArrays": True   # keep students with 0 completions
         }},
 
-        # Stage 3: Nhóm lại theo student_id
-        # Tính: tiến độ, đếm quiz có điểm (loại bỏ NULL của video/doc)
+        # Stage 3: Group back by student — collect per-student progress and quiz scores.
         {"$group": {
             "_id": "$student_id",
-            "progress_pct":  {"$first": "$overall_progress_pct"},
-            "quiz_scores":   {
-                "$push": {
-                    "$cond": [
-                        {"$and": [
-                            {"$gt": ["$lesson_completions.score", None]},
-                            {"$gte": ["$lesson_completions.score", 0]},
-                            {"$lte": ["$lesson_completions.score", 100]},
-                        ]},
-                        "$lesson_completions.score",
-                        "$$REMOVE"   # bỏ qua video/doc (score = null)
-                    ]
-                }
+            "progress_pct": {"$first": "$overall_progress_pct"},
+            "quiz_scores": {
+                "$push": "$lesson_completions.score"   # null for video/doc — filtered below
             }
         }},
 
-        # Stage 4: Tính toán tổng hợp trên toàn bộ học viên
+        # Stage 4: Aggregate across all students
         {"$group": {
             "_id": None,
             "total_students":   {"$sum": 1},
             "avg_progress_pct": {"$avg": "$progress_pct"},
-            "completed_count":  {
+            "completed_count": {
                 "$sum": {
                     "$cond": [{"$eq": ["$progress_pct", 100.0]}, 1, 0]
                 }
             },
-            # $avg trên array rỗng trả về null — được xử lý ở bước sau
-            "all_quiz_scores":  {"$push": "$quiz_scores"},
+            "all_quiz_scores": {"$push": "$quiz_scores"},
         }},
 
-        # Stage 5: Flatten mảng-của-mảng quiz scores, tính completion_rate
+        # Stage 5: Flatten the array-of-arrays, then filter out null values (null = video/doc lessons with no score).
         {"$project": {
             "_id": 0,
             "total_students":   1,
             "avg_progress_pct": {"$round": ["$avg_progress_pct", 1]},
-            "completion_rate":  {
+            "completion_rate": {
                 "$round": [
                     {"$multiply": [
                         {"$divide": ["$completed_count", "$total_students"]},
@@ -100,17 +88,23 @@ async def get_course_stats(
                     1
                 ]
             },
-            # Giải nén mảng lồng nhau thành 1 mảng phẳng
+            # Flatten nested arrays, then strip nulls explicitly
             "flat_scores": {
-                "$reduce": {
-                    "input": "$all_quiz_scores",
-                    "initialValue": [],
-                    "in": {"$concatArrays": ["$$value", "$$this"]}
+                "$filter": {
+                    "input": {
+                        "$reduce": {
+                            "input": "$all_quiz_scores",
+                            "initialValue": [],
+                            "in": {"$concatArrays": ["$$value", "$$this"]}
+                        }
+                    },
+                    "as": "s",
+                    "cond": {"$ne": ["$$s", None]}   # drop null (video/doc) scores
                 }
             }
         }},
 
-        # Stage 6: Tính avg_quiz_score từ mảng phẳng
+        # Stage 6: Compute avg_quiz_score from the clean flat array
         {"$project": {
             "total_students":   1,
             "avg_progress_pct": 1,
@@ -119,26 +113,28 @@ async def get_course_stats(
                 "$cond": [
                     {"$gt": [{"$size": "$flat_scores"}, 0]},
                     {"$round": [{"$avg": "$flat_scores"}, 1]},
-                    None   # chưa có quiz nào được làm
+                    None    # no quiz attempted yet
                 ]
             }
         }}
     ]
 
     # ─────────────────────────────────────────────
-    # PIPELINE 2: Thống kê từng bài học (per-lesson)
-    # Hữu ích cho instructor biết bài nào khó / dễ
+    # PIPELINE 2: Per-lesson stats
+    # Useful for instructors to identify hard / easy lessons
     # ─────────────────────────────────────────────
     per_lesson_pipeline = [
         {"$match": {"course_id": course_id}},
+        # No preserveNullAndEmptyArrays here — we only want actual completions
         {"$unwind": "$lesson_completions"},
         {"$group": {
             "_id": "$lesson_completions.lesson_id",
             "completion_count": {"$sum": 1},
+            # avg in group ignores null values, so video/doc nulls are excluded
             "avg_score": {
                 "$avg": {
                     "$cond": [
-                        {"$gt": ["$lesson_completions.score", None]},
+                        {"$ne": ["$lesson_completions.score", None]},
                         "$lesson_completions.score",
                         None
                     ]
@@ -151,7 +147,7 @@ async def get_course_stats(
             "completion_count": 1,
             "avg_score": {
                 "$cond": [
-                    {"$gt": ["$avg_score", None]},
+                    {"$ne": ["$avg_score", None]},
                     {"$round": ["$avg_score", 1]},
                     None
                 ]
@@ -160,16 +156,12 @@ async def get_course_stats(
         {"$sort": {"lesson_id": 1}}
     ]
 
-    # Chạy cả 2 pipeline song song
-    overview_result = await db.student_progress.aggregate(
-        overview_pipeline
-    ).to_list(1)
+    overview_result, per_lesson_result = await asyncio.gather(
+        db.student_progress.aggregate(overview_pipeline).to_list(1),
+        db.student_progress.aggregate(per_lesson_pipeline).to_list(1000),
+    )
 
-    per_lesson_result = await db.student_progress.aggregate(
-        per_lesson_pipeline
-    ).to_list(1000)
-
-    # Nếu chưa có học viên nào
+    # No students enrolled yet
     if not overview_result:
         return {
             "course_id":        course_id,

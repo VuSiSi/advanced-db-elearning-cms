@@ -60,7 +60,11 @@ async def get_course_stats(
             "quiz_scores":   {
                 "$push": {
                     "$cond": [
-                        {"$gt": ["$lesson_completions.score", None]},
+                        {"$and": [
+                            {"$gt": ["$lesson_completions.score", None]},
+                            {"$gte": ["$lesson_completions.score", 0]},
+                            {"$lte": ["$lesson_completions.score", 100]},
+                        ]},
                         "$lesson_completions.score",
                         "$$REMOVE"   # bỏ qua video/doc (score = null)
                     ]

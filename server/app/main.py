@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv, find_dotenv
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -14,6 +15,7 @@ import uuid
 
 # 1. LOAD BIẾN MÔI TRƯỜNG
 load_dotenv()
+env_path = find_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 SECRET_KEY = os.getenv("SECRET_KEY")

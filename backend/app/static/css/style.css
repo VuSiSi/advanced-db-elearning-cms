@@ -286,3 +286,19 @@ textarea { resize: vertical; font-family: inherit; line-height: 1.6; }
 .empty-state { color: var(--text-muted); font-size: 14px; padding: 32px 0; }
 .error-state { color: #A32D2D; font-size: 13px; }
 .muted       { color: var(--text-muted); font-size: 13px; }
+
+/* ── Responsive breakpoints ─────────────────────────────── */
+@media (max-width: 768px) {
+  .editor-layout {
+    grid-template-columns: 1fr; 
+  }
+  .editor-sidebar { 
+    display: none;
+    border-right: none;
+    border-bottom: 0.5px solid var(--border);
+    max-height: 240px;
+  }
+  .co-grid {
+    grid-template-columns: 1fr;
+  }
+}

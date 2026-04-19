@@ -566,10 +566,24 @@ function setView(view) {
   }
 }
 
-// ── Card context menu (placeholder) ───────────────────────
 function cardMenu(event, courseId) {
-  // Future: show dropdown with Edit / Delete options
-  console.log('Menu for course:', courseId);
+  // Tạo dropdown nhỏ
+  const menu = document.createElement('div');
+  menu.style.cssText = `
+    position:fixed;top:${event.clientY}px;left:${event.clientX}px;
+    background:var(--bg);border:0.5px solid var(--border);
+    border-radius:var(--radius);padding:4px;z-index:999;
+    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+  `;
+  menu.innerHTML = `
+    <div onclick="window.location.href='/courses/${courseId}'"
+         style="padding:8px 12px;cursor:pointer;font-size:13px">Edit course</div>
+    <div onclick="window.location.href='/analytics?course_id=${courseId}'"
+         style="padding:8px 12px;cursor:pointer;font-size:13px">Analytics</div>
+  `;
+  document.body.appendChild(menu);
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
 }
 
 // ── Show "New Course" button for instructors only ──────────

@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import os
 
@@ -29,7 +29,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── Token helpers ─────────────────────────────────────────
 def create_access_token(user_id: str, role: str) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=EXPIRE_MINUTES)
     payload = {"sub": user_id, "role": role, "exp": expire}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 

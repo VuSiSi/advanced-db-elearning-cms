@@ -3,7 +3,7 @@ from app.models import ProgressCreate, LessonCompletion
 from app.middleware.auth import get_current_user, require_student, TokenData
 from app.database import get_db
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
 
@@ -62,7 +62,7 @@ async def mark_lesson_complete(
         "course_id": course_id
     })
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     completion = {
         "lesson_id": lesson_id,
         "completed_at": now,

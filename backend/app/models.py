@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 
 # LESSON  (embedded inside Chapter)
 class QuizQuestion(BaseModel):
@@ -49,8 +49,8 @@ class CourseCreate(CourseBase):
 class Course(CourseBase):
     instructor_id: str
     chapters: List[Chapter] = []
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
 
 # USER  (separate collection — not embedded)
 class UserBase(BaseModel):
@@ -63,7 +63,8 @@ class UserCreate(UserBase):
 
 class UserInDB(UserBase):
     hashed_password: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
 
 class LoginRequest(BaseModel):
     email: str
@@ -76,7 +77,7 @@ class UserOut(UserBase):
 # Reason: grows unbounded (students × lessons), never read together with course
 class LessonCompletion(BaseModel):
     lesson_id: str
-    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime = Field(default_factory=datetime.now(timezone.utc))
     score: Optional[float] = None   # None for video/doc, float for quiz
 
 class ProgressCreate(BaseModel):
@@ -86,7 +87,7 @@ class ProgressCreate(BaseModel):
 class Progress(ProgressCreate):
     lesson_completions: List[LessonCompletion] = []
     overall_progress_pct: float = 0.0
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=datetime.now(timezone.utc))
 
 # AUTH
 class Token(BaseModel):

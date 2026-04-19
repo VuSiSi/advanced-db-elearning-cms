@@ -83,20 +83,64 @@ async function markComplete() {
 
 function submitQuiz(questions) {
   let correct = 0;
-  questions.forEach((q, i) => {
+  const results = questions.map((q, i) => {
     const selected = document.querySelector(`input[name="q${i}"]:checked`);
-    if (selected && parseInt(selected.value) === q.correct_index) correct++;
+    const isCorrect = selected && parseInt(selected.value) === q.correct_index;
+    if (isCorrect) correct++;
+    return { question: q.question, isCorrect };
   });
+
   const score = Math.round((correct / questions.length) * 100);
-  document.getElementById('quiz-result').innerHTML =
-    `<p class="alert alert-success">Score: ${score}% (${correct}/${questions.length})</p>`;
+
+  // Show per-question result
+  const resultHtml = results.map(r => `
+    <p style="color: ${r.isCorrect ? 'var(--teal-600)' : '#A32D2D'}">
+      ${r.isCorrect ? '✓' : '✗'} ${r.question}
+    </p>`).join('');
+
+  document.getElementById('quiz-result').innerHTML = `
+    <div class="alert ${score >= 60 ? 'alert-success' : 'alert-error'}">
+      Score: ${score}% (${correct}/${questions.length})
+    </div>
+    ${resultHtml}`;
+
+  // Disable submit after submission
+  document.querySelector('button[onclick^="submitQuiz"]').disabled = true;
 
   // Auto mark complete with score
+  markCompleteWithScore(score);
+}
+
+async function loadProgressBar(courseId) {
   const token   = localStorage.getItem('token');
+  if (!token) return;
   const payload = JSON.parse(atob(token.split('.')[1]));
-  fetch(`/api/progress/complete?student_id=${payload.sub}&course_id=${courseId}&lesson_id=${lessonId}&score=${score}`, {
-    method: 'POST', headers: authHeaders()
-  });
+  if (payload.role !== 'student') return;
+
+  const res = await fetch(
+    `/api/progress/${payload.sub}/${courseId}`,
+    { headers: authHeaders() }
+  );
+  if (!res.ok) return;
+  const data = await res.json();
+  const pct  = Math.round(data.overall_progress_pct || 0);
+
+  // Inject progress bar into DOM
+  const bar = document.createElement('div');
+  bar.innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;
+                  font-size:12px;color:var(--text-secondary);margin-bottom:4px">
+        <span>Course progress</span><span>${pct}%</span>
+      </div>
+      <div style="height:6px;background:var(--bg-tertiary);border-radius:3px">
+        <div style="height:100%;width:${pct}%;
+                    background:var(--teal-600);border-radius:3px;
+                    transition:width 0.4s ease">
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('lesson-container').prepend(bar);
 }
 
 loadLesson();

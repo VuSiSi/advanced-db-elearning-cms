@@ -1,5 +1,4 @@
 import os
-from dotenv import load_dotenv, find_dotenv
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -12,10 +11,12 @@ from typing import List, Literal
 from bson import ObjectId
 from pydantic import Field
 import uuid
+from contextlib import asynccontextmanager
+import time
+from fastapi import Request
 
 # 1. LOAD BIẾN MÔI TRƯỜNG
 load_dotenv()
-env_path = find_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -51,8 +52,12 @@ def create_access_token(data: dict):
 # 5. API ENDPOINTS
 app = FastAPI(title="E-Learning API")
 
-import time
-from fastapi import Request
+@app.get("/")
+async def trang_chu():
+    return {
+        "thong_bao": "Chào mừng đến với Hệ thống E-Learning NEU!",
+        "huong_dan": "Hãy truy cập /docs để xem tài liệu API nhé."
+    }
 
 # ==========================================
 # MIDDLEWARE: ĐO THỜI GIAN CHẠY API (BENCHMARK)
@@ -257,36 +262,69 @@ async def mark_lesson_complete(req: ProgressComplete, token: str = Depends(oauth
     return {"message": "Chúc mừng! Bạn đã hoàn thành bài học."}
 
 
-# ✅ YÊU CẦU 2: GET /progress/{student}/{course} (Xem báo cáo % tiến độ)
+# ✅ YÊU CẦU 2 (NÂNG CẤP): GET /progress/{student}/{course} (Dùng Aggregation Pipeline)
 @app.get("/progress/{student_email}/{course_id}")
 async def get_student_progress(student_email: str, course_id: str):
-    # 1. Quét bảng Progress để lấy ra TẤT CẢ các bài học mà user này đã làm trong khóa này
-    cursor = progress_collection.find({
-        "email": student_email,
-        "course_id": course_id
-    })
-    completed_records = await cursor.to_list(length=1000)
-    
-    # Rút trích ra 1 cái danh sách chỉ chứa lesson_id
-    completed_lesson_ids = [record["lesson_id"] for record in completed_records]
-
-    # 2. (Tính năng nâng cao) Đi tìm tổng số bài học của khóa học để tính Phần trăm (%)
+    # 1. Đi tìm tổng số bài học của khóa học
     course = await courses_collection.find_one({"_id": ObjectId(course_id)})
     total_lessons = 0
     if course and "chapters" in course:
         for chapter in course["chapters"]:
             total_lessons += len(chapter.get("lessons", []))
 
+    # ========================================================
+    # 🔥 TÍNH NĂNG NÂNG CAO: MONGODB AGGREGATION PIPELINE 🔥
+    # ========================================================
+    pipeline = [
+        # STAGE 1: Tìm đúng sinh viên và đúng khóa học
+        {
+            "$match": {
+                "email": student_email,
+                "course_id": course_id
+            }
+        },
+        # STAGE 2: LỌC NHIỄU (Loại bỏ rác làm gãy pipeline)
+        # Ví dụ: Loại bỏ các record điểm danh bị lỗi chữ "V", rỗng, hoặc None
+        {
+            "$match": {
+                "lesson_id": { "$nin": ["V", "v", "", None] }
+            }
+        },
+        # STAGE 3: Gom nhóm và Đếm (Database tự đếm, cực kỳ tối ưu)
+        {
+            "$group": {
+                "_id": "$course_id",
+                "completed_count": { "$sum": 1 }, # Tự động cộng 1 cho mỗi bài học hợp lệ
+                "completed_lesson_ids": { "$push": "$lesson_id" } # Gom các ID lại thành 1 mảng
+            }
+        }
+    ]
+
+    # Chạy lệnh Aggregation
+    cursor = progress_collection.aggregate(pipeline)
+    result_list = await cursor.to_list(length=1)
+
+    # Rút trích kết quả từ Pipeline trả về
+    if result_list:
+        agg_result = result_list[0]
+        completed_count = agg_result["completed_count"]
+        completed_lesson_ids = agg_result["completed_lesson_ids"]
+    else:
+        # Nếu chưa học bài nào thì trả về 0
+        completed_count = 0
+        completed_lesson_ids = []
+
     # 3. Tính tỷ lệ hoàn thành
     percentage = 0
     if total_lessons > 0:
-        percentage = round((len(completed_lesson_ids) / total_lessons) * 100, 2)
+        percentage = round((completed_count / total_lessons) * 100, 2)
 
     return {
         "student": student_email,
         "course_id": course_id,
         "total_lessons_in_course": total_lessons,
-        "completed_lessons_count": len(completed_lesson_ids),
+        "completed_lessons_count": completed_count,
         "completion_percentage": f"{percentage}%",
-        "completed_lesson_ids": completed_lesson_ids
+        "completed_lesson_ids": completed_lesson_ids,
+        "tech_note": "Data processed natively by MongoDB Aggregation Pipeline"
     }

@@ -1,8 +1,0 @@
-fastapi
-uvicorn
-motor
-python-jose[cryptography]
-passlib[bcrypt]
-python-dotenv
-pydantic
-pydantic-settings

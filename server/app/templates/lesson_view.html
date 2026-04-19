@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson.title if lesson else "Lesson" }} — E-Learning CMS{% endblock %}
+
+{% block content %}
+<div class="lv-layout">
+
+  <!-- ══════════════════════════════════════════════
+       LEFT SIDEBAR — Course navigation + progress
+  ══════════════════════════════════════════════ -->
+  <aside class="lv-sidebar">
+
+    <!-- Course header -->
+    <div class="lv-sidebar-header">
+      <a class="lv-back-link" href="/courses">← Courses</a>
+      <h2 class="lv-course-title" id="lv-course-title">
+        {{ course.title if course else "Loading..." }}
+      </h2>
+
+      <!-- Overall progress bar -->
+      <div class="lv-progress-wrap">
+        <div class="lv-progress-label">
+          <span>Progress</span>
+          <span id="lv-progress-pct">0%</span>
+        </div>
+        <div class="lv-progress-track">
+          <div class="lv-progress-fill" id="lv-progress-fill" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chapter / lesson tree -->
+    <nav class="lv-tree" id="lv-tree" aria-label="Course navigation">
+      {% if course %}
+        {% for ch in course.chapters %}
+          <div class="lv-chapter" id="lv-ch-{{ ch.chapter_id|e }}">
+            <button class="lv-chapter-btn" data-action="toggle-ch" type="button"
+                    aria-expanded="true" aria-controls="lv-ch-lessons-{{ ch.chapter_id|e }}">
+              <span class="lv-ch-arrow">▾</span>
+              <span class="lv-ch-title">{{ ch.title }}</span>
+              <span class="lv-ch-badge" id="lv-ch-badge-{{ ch.chapter_id|e }}">
+                0 / {{ ch.lessons|length }}
+              </span>
+            </button>
+            <ul class="lv-lessons" id="lv-ch-lessons-{{ ch.chapter_id|e }}">
+              {% for ls in ch.lessons %}
+                <li>
+                  <a class="lv-lesson-item{% if lesson and ls.lesson_id == lesson.lesson_id %} active{% endif %}"
+                     href="/courses/{{ course.id }}/lessons/{{ ls.lesson_id }}"
+                     data-lesson-id="{{ ls.lesson_id|e }}"
+                     id="lv-li-{{ ls.lesson_id|e }}">
+                    <!-- completion checkbox -->
+                    <span class="lv-lesson-check" id="lv-check-{{ ls.lesson_id|e }}">
+                      <span class="lv-check-inner"></span>
+                    </span>
+                    <!-- type icon -->
+                    <span class="lv-lesson-icon" aria-hidden="true">
+                      {% if ls.type == "video" %}▶{% elif ls.type == "quiz" %}?{% else %}≡{% endif %}
+                    </span>
+                    <span class="lv-lesson-name">{{ ls.title }}</span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="lv-tree-loading">Loading...</div>
+      {% endif %}
+    </nav>
+
+  </aside>
+
+  <!-- ══════════════════════════════════════════════
+       MAIN — Lesson content
+  ══════════════════════════════════════════════ -->
+  <main class="lv-main" id="lv-main">
+
+    {% if lesson %}
+
+      <!-- ─── VIDEO LESSON ─── -->
+      {% if lesson.type == "video" %}
+      <div class="lv-lesson-wrap" data-type="video">
+        <div class="lv-lesson-meta">
+          <span class="lv-badge lv-badge-video">▶ Video</span>
+          {% if lesson.duration_seconds %}
+            <span class="lv-duration">{{ (lesson.duration_seconds // 60) }}m {{ (lesson.duration_seconds % 60) }}s</span>
+          {% endif %}
+        </div>
+        <h1 class="lv-lesson-title">{{ lesson.title }}</h1>
+
+        {% if lesson.video_url %}
+          <div class="lv-video-wrap">
+            <!-- Support YouTube embeds and direct video files -->
+            {% if "youtube.com" in lesson.video_url or "youtu.be" in lesson.video_url %}
+              <iframe class="lv-youtube"
+                      src="{{ lesson.video_url|replace('watch?v=', 'embed/')|replace('youtu.be/', 'www.youtube.com/embed/') }}"
+                      frameborder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowfullscreen>
+              </iframe>
+            {% else %}
+              <video class="lv-video" controls preload="metadata">
+                <source src="{{ lesson.video_url }}" />
+                Your browser does not support HTML5 video.
+              </video>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="lv-no-video">No video URL provided yet.</div>
+        {% endif %}
+
+        <!-- Mark complete button -->
+        <div class="lv-complete-row">
+          <button class="lv-btn-complete" id="btn-complete"
+                  data-lesson-id="{{ lesson.lesson_id }}"
+                  data-course-id="{{ course.id }}"
+                  type="button">
+            <span class="lv-btn-icon">✓</span>
+            Mark as Complete
+          </button>
+          <span class="lv-complete-msg hidden" id="complete-msg">✓ Completed!</span>
+        </div>
+      </div>
+
+      <!-- ─── DOCUMENT LESSON ─── -->
+      {% elif lesson.type == "document" %}
+      <div class="lv-lesson-wrap" data-type="document">
+        <div class="lv-lesson-meta">
+          <span class="lv-badge lv-badge-doc">≡ Reading</span>
+        </div>
+        <h1 class="lv-lesson-title">{{ lesson.title }}</h1>
+
+        <article class="lv-doc-content" id="lv-doc-content">
+          {% if lesson.content %}
+            {{ lesson.content }}
+          {% else %}
+            <p class="lv-empty-content">No content available yet.</p>
+          {% endif %}
+        </article>
+
+        <!-- Mark complete button -->
+        <div class="lv-complete-row">
+          <button class="lv-btn-complete" id="btn-complete"
+                  data-lesson-id="{{ lesson.lesson_id }}"
+                  data-course-id="{{ course.id }}"
+                  type="button">
+            <span class="lv-btn-icon">✓</span>
+            Mark as Complete
+          </button>
+          <span class="lv-complete-msg hidden" id="complete-msg">✓ Completed!</span>
+        </div>
+      </div>
+
+      <!-- ─── QUIZ LESSON ─── -->
+      {% elif lesson.type == "quiz" %}
+      <div class="lv-lesson-wrap" data-type="quiz">
+        <div class="lv-lesson-meta">
+          <span class="lv-badge lv-badge-quiz">? Quiz</span>
+          {% if lesson.questions %}
+            <span class="lv-duration">{{ lesson.questions|length }} question{{ 's' if lesson.questions|length != 1 }}</span>
+          {% endif %}
+        </div>
+        <h1 class="lv-lesson-title">{{ lesson.title }}</h1>
+
+        <!-- Quiz result banner (shown after submit) -->
+        <div class="lv-quiz-result hidden" id="quiz-result">
+          <div class="lv-result-inner">
+            <div class="lv-result-score" id="result-score">0 / 0</div>
+            <div class="lv-result-label" id="result-label">Complete</div>
+          </div>
+        </div>
+
+        <!-- Quiz form -->
+        <div class="lv-quiz-form" id="quiz-form">
+          {% if lesson.questions %}
+            {% for q in lesson.questions %}
+              <div class="lv-question" id="q-{{ loop.index0 }}" data-correct="{{ q.correct_index }}">
+                <div class="lv-question-header">
+                  <span class="lv-q-num">{{ loop.index }}</span>
+                  <p class="lv-q-text">{{ q.question }}</p>
+                </div>
+                <ul class="lv-options" role="radiogroup" aria-label="Options for question {{ loop.index }}">
+                  {% for opt in q.options %}
+                    <li>
+                      <label class="lv-option" data-idx="{{ loop.index0 }}">
+                        <input type="radio"
+                               name="q{{ loop.index0 }}_{{ loop.index0 }}"
+                               value="{{ loop.index0 }}"
+                               class="lv-option-input"
+                               aria-label="{{ opt }}" />
+                        <span class="lv-option-marker"></span>
+                        <span class="lv-option-text">{{ opt }}</span>
+                      </label>
+                    </li>
+                  {% endfor %}
+                </ul>
+                <div class="lv-q-feedback hidden" id="qfb-{{ loop.index0 }}"></div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="lv-empty-content">No questions available yet.</p>
+          {% endif %}
+
+          <div class="lv-quiz-footer">
+            <button class="lv-btn-submit" id="btn-submit-quiz" type="button"
+                    data-lesson-id="{{ lesson.lesson_id }}"
+                    data-course-id="{{ course.id }}">
+              Submit Quiz
+            </button>
+          </div>
+        </div>
+
+      </div>
+      {% endif %}
+
+      <!-- Prev / Next navigation -->
+      <div class="lv-nav-row">
+        <button class="lv-nav-btn" id="btn-prev" type="button" disabled>← Previous</button>
+        <button class="lv-nav-btn lv-nav-btn-next" id="btn-next" type="button">Next →</button>
+      </div>
+
+    {% else %}
+      <!-- No lesson selected -->
+      <div class="lv-empty-state">
+        <div class="lv-empty-icon">📚</div>
+        <h2>Pick a lesson to start learning</h2>
+        <p>Select any lesson from the sidebar on the left.</p>
+      </div>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+const COURSE_ID = "{{ course.id if course else '' }}";
+const CURRENT_LESSON_ID = "{{ lesson.lesson_id if lesson else '' }}";
+
+// Map lessonId → true/false  (loaded from API)
+let completedSet = new Set();
+
+// Flat ordered list of all lesson IDs (for prev/next navigation)
+let lessonOrder = [];
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  buildLessonOrder();
+  setupNavButtons();
+  setupCompleteButton();
+  setupQuizSubmit();
+  setupChapterToggles();
+  await loadProgress();
+});
+
+// ─── Build flat lesson order from DOM ───
+function buildLessonOrder() {
+  lessonOrder = Array.from(
+    document.querySelectorAll('.lv-lesson-item')
+  ).map(el => el.dataset.lessonId).filter(Boolean);
+}
+
+// ─── Prev / Next buttons ───
+function setupNavButtons() {
+  const idx = lessonOrder.indexOf(CURRENT_LESSON_ID);
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+  if (!btnPrev || !btnNext) return;
+
+  if (idx > 0) {
+    btnPrev.disabled = false;
+    btnPrev.addEventListener('click', () => navigateLesson(lessonOrder[idx - 1]));
+  }
+  if (idx < lessonOrder.length - 1) {
+    btnNext.addEventListener('click', () => navigateLesson(lessonOrder[idx + 1]));
+  } else {
+    btnNext.textContent = '🎉 Finish Course';
+    btnNext.addEventListener('click', () => {
+      window.location.href = '/courses';
+    });
+  }
+}
+
+function navigateLesson(lessonId) {
+  window.location.href = `/courses/${COURSE_ID}/lessons/${encodeURIComponent(lessonId)}`;
+}
+
+// ─── Chapter toggle ───
+function setupChapterToggles() {
+  document.querySelectorAll('[data-action="toggle-ch"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      const target = document.getElementById(btn.getAttribute('aria-controls'));
+      const arrow = btn.querySelector('.lv-ch-arrow');
+      btn.setAttribute('aria-expanded', String(!expanded));
+      if (target) target.classList.toggle('hidden', expanded);
+      if (arrow) arrow.textContent = expanded ? '▸' : '▾';
+    });
+  });
+}
+
+// ═══════════════════════════════════════════
+//  PROGRESS  (load + render)
+// ═══════════════════════════════════════════
+async function loadProgress() {
+  const token = localStorage.getItem('token');
+  if (!token || !COURSE_ID) return;
+
+  let email = '';
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // Progress API uses email; fall back to sub field
+    email = payload.email || payload.sub || '';
+  } catch { return; }
+
+  if (!email) return;
+
+  try {
+    const res = await fetch(
+      `/api/progress/${encodeURIComponent(email)}/${encodeURIComponent(COURSE_ID)}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+
+    completedSet = new Set(data.completed_lesson_ids || []);
+    updateProgressUI(data.completion_percentage, data.completed_lessons_count, data.total_lessons_in_course);
+
+    // Mark completed lessons in sidebar
+    completedSet.forEach(id => markLessonDoneInSidebar(id));
+
+    // If current lesson is already completed → show completed state
+    if (CURRENT_LESSON_ID && completedSet.has(CURRENT_LESSON_ID)) {
+      showCompletedState();
+    }
+  } catch (err) {
+    console.warn('Failed to load progress:', err);
+  }
+}
+
+function updateProgressUI(pct, done, total) {
+  // pct can be "75%" or 75
+  const raw = typeof pct === 'string' ? parseFloat(pct) : pct;
+  const pctEl = document.getElementById('lv-progress-pct');
+  const fillEl = document.getElementById('lv-progress-fill');
+  if (pctEl) pctEl.textContent = isNaN(raw) ? '0%' : `${raw}%`;
+  if (fillEl) fillEl.style.width = isNaN(raw) ? '0%' : `${raw}%`;
+
+  // Update per-chapter badges
+  updateChapterBadges();
+}
+
+function updateChapterBadges() {
+  document.querySelectorAll('.lv-chapter').forEach(chEl => {
+    const chId = chEl.id.replace('lv-ch-', '');
+    const badge = document.getElementById(`lv-ch-badge-${chId}`);
+    if (!badge) return;
+    const lessons = chEl.querySelectorAll('.lv-lesson-item');
+    const total = lessons.length;
+    let done = 0;
+    lessons.forEach(el => {
+      if (completedSet.has(el.dataset.lessonId)) done++;
+    });
+    badge.textContent = `${done} / ${total}`;
+    if (done === total && total > 0) badge.classList.add('lv-ch-badge-done');
+    else badge.classList.remove('lv-ch-badge-done');
+  });
+}
+
+function markLessonDoneInSidebar(lessonId) {
+  const checkEl = document.getElementById(`lv-check-${lessonId}`);
+  if (checkEl) checkEl.classList.add('done');
+  const itemEl = document.getElementById(`lv-li-${lessonId}`);
+  if (itemEl) itemEl.classList.add('completed');
+}
+
+// ═══════════════════════════════════════════
+//  MARK COMPLETE BUTTON
+// ═══════════════════════════════════════════
+function setupCompleteButton() {
+  const btn = document.getElementById('btn-complete');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const lessonId = btn.dataset.lessonId;
+    const courseId = btn.dataset.courseId;
+    await markComplete(lessonId, courseId);
+  });
+}
+
+async function markComplete(lessonId, courseId) {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    alert('Please log in to track your progress.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-complete');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+
+  try {
+    const res = await fetch('/api/progress/complete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ course_id: courseId, lesson_id: lessonId }),
+    });
+
+    const data = await res.json();
+
+    completedSet.add(lessonId);
+    markLessonDoneInSidebar(lessonId);
+    showCompletedState();
+
+    // Refresh progress bar from API
+    await loadProgress();
+
+  } catch (err) {
+    console.error('Mark complete failed:', err);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="lv-btn-icon">✓</span> Mark as Complete';
+    }
+  }
+}
+
+function showCompletedState() {
+  const btn = document.getElementById('btn-complete');
+  const msg = document.getElementById('complete-msg');
+  if (btn) {
+    btn.classList.add('done');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="lv-btn-icon">✓</span> Completed';
+  }
+  if (msg) msg.classList.remove('hidden');
+}
+
+// ═══════════════════════════════════════════
+//  QUIZ SUBMIT
+// ═══════════════════════════════════════════
+function setupQuizSubmit() {
+  const btn = document.getElementById('btn-submit-quiz');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const questions = document.querySelectorAll('.lv-question');
+    if (!questions.length) return;
+
+    let answered = 0;
+    questions.forEach(qEl => {
+      const checked = qEl.querySelector('.lv-option-input:checked');
+      if (checked) answered++;
+    });
+
+    if (answered < questions.length) {
+      alert(`Please answer all ${questions.length} questions before submitting.`);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    let correct = 0;
+    const total = questions.length;
+
+    questions.forEach((qEl, i) => {
+      const correctIdx = parseInt(qEl.dataset.correct, 10);
+      const selectedInput = qEl.querySelector('.lv-option-input:checked');
+      const selectedIdx = selectedInput ? parseInt(selectedInput.value, 10) : -1;
+      const isCorrect = selectedIdx === correctIdx;
+      if (isCorrect) correct++;
+
+      // Highlight options
+      qEl.querySelectorAll('.lv-option').forEach((optEl, optIdx) => {
+        optEl.classList.remove('correct', 'wrong', 'missed');
+        if (optIdx === correctIdx) optEl.classList.add('correct');
+        else if (optIdx === selectedIdx && !isCorrect) optEl.classList.add('wrong');
+        optEl.querySelector('.lv-option-input').disabled = true;
+      });
+
+      // Feedback
+      const fb = document.getElementById(`qfb-${i}`);
+      if (fb) {
+        fb.textContent = isCorrect ? '✓ Correct!' : `✗ The correct answer was option ${correctIdx + 1}.`;
+        fb.className = `lv-q-feedback ${isCorrect ? 'lv-fb-correct' : 'lv-fb-wrong'}`;
+      }
+    });
+
+    const score = Math.round((correct / total) * 100);
+
+    // Show result banner
+    const resultEl = document.getElementById('quiz-result');
+    const scoreEl = document.getElementById('result-score');
+    const labelEl = document.getElementById('result-label');
+    if (resultEl && scoreEl && labelEl) {
+      scoreEl.textContent = `${correct} / ${total}`;
+      labelEl.textContent = score >= 70 ? '🎉 Passed!' : 'Keep trying!';
+      resultEl.className = `lv-quiz-result ${score >= 70 ? 'pass' : 'fail'}`;
+    }
+
+    btn.textContent = 'Submitted';
+
+    // Send to API (score stored as percentage)
+    const lessonId = btn.dataset.lessonId;
+    const courseId = btn.dataset.courseId;
+    if (lessonId && courseId) {
+      await submitQuizScore(lessonId, courseId, score);
+    }
+  });
+}
+
+async function submitQuizScore(lessonId, courseId, score) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+
+  try {
+    await fetch('/api/progress/complete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        course_id: courseId,
+        lesson_id: lessonId,
+        score: score,
+      }),
+    });
+
+    completedSet.add(lessonId);
+    markLessonDoneInSidebar(lessonId);
+    await loadProgress();
+  } catch (err) {
+    console.warn('Quiz score submit failed:', err);
+  }
+}
+</script>
+{% endblock %}

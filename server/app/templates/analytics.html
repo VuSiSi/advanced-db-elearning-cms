@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Analytics — {{ course.title if course else "Course" }}{% endblock %}
+
+{% block content %}
+<div class="analytics-layout">
+
+  <!-- Page header -->
+  <div class="an-header">
+    <div class="an-header-inner">
+      <a class="an-back" href="/courses">← Back to Courses</a>
+      <div class="an-header-title">
+        <h1 id="an-course-title">{{ course.title if course else "Course Analytics" }}</h1>
+        <span class="an-subtitle">Instructor Dashboard</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats cards row -->
+  <div class="an-cards" id="an-cards">
+    <div class="an-card an-card-primary" id="an-card-rate">
+      <div class="an-card-icon">📊</div>
+      <div class="an-card-body">
+        <div class="an-card-value" id="an-completion-rate">—</div>
+        <div class="an-card-label">Avg Completion Rate</div>
+      </div>
+    </div>
+
+    <div class="an-card" id="an-card-students">
+      <div class="an-card-icon">👥</div>
+      <div class="an-card-body">
+        <div class="an-card-value" id="an-total-students">—</div>
+        <div class="an-card-label">Active Students</div>
+      </div>
+    </div>
+
+    <div class="an-card" id="an-card-score">
+      <div class="an-card-icon">⭐</div>
+      <div class="an-card-body">
+        <div class="an-card-value" id="an-avg-score">—</div>
+        <div class="an-card-label">Avg Quiz Score</div>
+      </div>
+    </div>
+
+    <div class="an-card" id="an-card-lessons">
+      <div class="an-card-icon">📚</div>
+      <div class="an-card-body">
+        <div class="an-card-value" id="an-total-lessons">—</div>
+        <div class="an-card-label">Total Lessons</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main content: chart + lesson breakdown -->
+  <div class="an-content">
+
+    <!-- Completion rate donut chart (CSS-only) -->
+    <div class="an-chart-section">
+      <h2 class="an-section-title">Completion Overview</h2>
+      <div class="an-donut-wrap">
+        <div class="an-donut" id="an-donut">
+          <svg class="an-donut-svg" viewBox="0 0 120 120">
+            <!-- Background ring -->
+            <circle class="an-donut-bg" cx="60" cy="60" r="50"
+                    fill="none" stroke-width="14"/>
+            <!-- Progress ring — stroke-dashoffset updated via JS -->
+            <circle class="an-donut-ring" id="an-donut-ring" cx="60" cy="60" r="50"
+                    fill="none" stroke-width="14"
+                    stroke-dasharray="314.16"
+                    stroke-dashoffset="314.16"
+                    transform="rotate(-90 60 60)"/>
+          </svg>
+          <div class="an-donut-label" id="an-donut-label">0%</div>
+        </div>
+        <div class="an-donut-legend">
+          <div class="an-legend-item">
+            <span class="an-legend-dot completed"></span>Completed
+          </div>
+          <div class="an-legend-item">
+            <span class="an-legend-dot remaining"></span>Remaining
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lesson completion breakdown -->
+    <div class="an-lessons-section">
+      <h2 class="an-section-title">Lesson Completion</h2>
+      <div class="an-lesson-list" id="an-lesson-list">
+        <div class="an-loading">Loading analytics...</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const COURSE_ID = "{{ course.id if course else '' }}";
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAnalytics();
+});
+
+async function loadAnalytics() {
+  if (!COURSE_ID) return;
+
+  const token = localStorage.getItem('token');
+  if (!token) {
+    document.getElementById('an-lesson-list').innerHTML =
+      '<p class="an-error">Please log in as an instructor to view analytics.</p>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/stats/course/${COURSE_ID}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to load analytics');
+    }
+
+    const data = await res.json();
+    renderAnalytics(data);
+  } catch (err) {
+    document.getElementById('an-lesson-list').innerHTML =
+      `<p class="an-error">⚠ ${err.message}</p>`;
+  }
+}
+
+function renderAnalytics(data) {
+  // ─── Cards ───
+  const rate = data.avg_completion_rate ?? data.completion_rate ?? 0;
+  const rateDisplay = typeof rate === 'number' ? `${rate.toFixed(1)}%` : rate;
+  setText('an-completion-rate', rateDisplay);
+  setText('an-total-students', data.total_students ?? data.student_count ?? '—');
+  setText('an-avg-score', data.avg_quiz_score != null ? `${data.avg_quiz_score.toFixed(1)}%` : 'N/A');
+  setText('an-total-lessons', data.total_lessons ?? '—');
+
+  // ─── Donut chart ───
+  const pct = parseFloat(rate) || 0;
+  const circumference = 314.16;
+  const offset = circumference - (pct / 100) * circumference;
+  const ring = document.getElementById('an-donut-ring');
+  if (ring) {
+    // Animate with CSS transition (set initially to no-transition, then apply)
+    ring.style.transition = 'stroke-dashoffset 1s ease';
+    ring.style.strokeDashoffset = offset;
+  }
+  setText('an-donut-label', `${Math.round(pct)}%`);
+
+  // ─── Lesson list ───
+  const container = document.getElementById('an-lesson-list');
+  if (!container) return;
+
+  const lessons = data.lesson_stats || data.lessons || [];
+  if (!lessons.length) {
+    container.innerHTML = '<p class="an-empty">No lesson data available.</p>';
+    return;
+  }
+
+  container.innerHTML = lessons.map(ls => {
+    const lsRate = ls.completion_rate ?? ls.pct ?? 0;
+    const lsScore = ls.avg_score != null ? `${ls.avg_score.toFixed(1)}%` : null;
+    const typeClass = ls.type === 'video' ? 'video' : ls.type === 'quiz' ? 'quiz' : 'doc';
+    const typeIcon  = ls.type === 'video' ? '▶' : ls.type === 'quiz' ? '?' : '≡';
+
+    return `
+      <div class="an-lesson-row">
+        <div class="an-lesson-info">
+          <span class="an-lesson-icon ${typeClass}" aria-hidden="true">${typeIcon}</span>
+          <div class="an-lesson-text">
+            <span class="an-lesson-name">${escHtml(ls.title || ls.lesson_id)}</span>
+            ${lsScore ? `<span class="an-lesson-score">Avg score: ${lsScore}</span>` : ''}
+          </div>
+        </div>
+        <div class="an-lesson-bar-wrap">
+          <div class="an-lesson-bar">
+            <div class="an-lesson-bar-fill ${typeClass}" style="width: ${lsRate}%"></div>
+          </div>
+          <span class="an-lesson-pct">${typeof lsRate === 'number' ? lsRate.toFixed(0) : lsRate}%</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

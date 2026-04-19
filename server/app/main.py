@@ -234,14 +234,28 @@ progress_collection = db.get_collection("progress") # Tạo collection mới
 # Lưu ý: API này dùng JWT (Depends), bắt buộc phải có ổ khóa mới được chạy
 @app.post("/progress/complete")
 async def mark_lesson_complete(req: ProgressComplete, token: str = Depends(oauth2_scheme)):
-    # 1. Giải mã token để biết sinh viên nào đang bấm nút
+    # 1. Giải mã token (giữ nguyên)
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
     except JWTError:
         raise HTTPException(status_code=401, detail="Vui lòng đăng nhập!")
 
-    # 2. Kiểm tra xem sinh viên này đã hoàn thành bài này trước đó chưa (Chống spam click)
+    # 🔥 BƯỚC QUAN TRỌNG: KIỂM TRA BÀI HỌC CÓ THẬT KHÔNG?
+    # Tìm khóa học và xem trong mảng chapters -> lessons có cái ID này không
+    course = await courses_collection.find_one({
+        "_id": ObjectId(req.course_id),
+        "chapters.lessons.id": req.lesson_id # MongoDB sẽ tự quét sâu vào mảng lồng
+    })
+
+    if not course:
+        # Nếu không tìm thấy sự kết hợp Course + Lesson này, từ chối luôn!
+        raise HTTPException(
+            status_code=400, 
+            detail="Lỗi: Bài học này không tồn tại trong khóa học. Đừng hack nhé Thành!"
+        )
+
+    # 2. Kiểm tra trùng lặp (giữ nguyên để chống spam click)
     existing = await progress_collection.find_one({
         "email": email,
         "course_id": req.course_id,
@@ -250,12 +264,12 @@ async def mark_lesson_complete(req: ProgressComplete, token: str = Depends(oauth
     if existing:
         return {"message": "Bạn đã hoàn thành bài học này trước đó rồi!"}
 
-    # 3. Lưu vào database
+    # 3. Lưu vào database (chỉ khi đã vượt qua mọi bài test ở trên)
     new_record = {
         "email": email,
         "course_id": req.course_id,
         "lesson_id": req.lesson_id,
-        "completed_at": datetime.utcnow() # Lưu lại thời gian nộp bài
+        "completed_at": datetime.utcnow()
     }
     await progress_collection.insert_one(new_record)
     

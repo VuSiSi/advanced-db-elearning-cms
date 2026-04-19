@@ -111,6 +111,22 @@ function submitQuiz(questions) {
   markCompleteWithScore(score);
 }
 
+async function markCompleteWithScore(score) {
+  const token   = localStorage.getItem('token');
+  if (!token) return;
+  const payload = JSON.parse(atob(token.split('.')[1]));
+  try {
+    await fetch(`/api/progress/complete?student_id=${payload.sub}&course_id=${courseId}&lesson_id=${lessonId}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ score })
+    });
+  } catch (err) {
+     console.error('Error marking quiz complete:', err);
+  }
+}
+
+
 async function loadProgressBar(courseId) {
   const token   = localStorage.getItem('token');
   if (!token) return;
@@ -144,5 +160,6 @@ async function loadProgressBar(courseId) {
 }
 
 loadLesson();
+loadProgressBar(courseId);
 </script>
 {% endblock %}

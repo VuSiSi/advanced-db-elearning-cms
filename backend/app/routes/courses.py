@@ -132,8 +132,7 @@ async def delete_chapter(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Course not found")
-    return {"message": "Chapter deleted"}
-
+    
 # POST /api/courses/{course_id}/chapters/{chapter_id}/lessons
 @router.post("/{course_id}/chapters/{chapter_id}/lessons", status_code=201)
 async def add_lesson(
@@ -148,7 +147,7 @@ async def add_lesson(
     # Validate: each lesson type must carry its required fields
     if lesson_in.type == "video" and not lesson_in.video_url:
         raise HTTPException(status_code=422, detail="video_url required for video lessons")
-    if lesson_in.type == "quiz" and not lesson_in.questions:
+    if lesson_in.type == "quiz" and lesson_in.questions is None:
         raise HTTPException(status_code=422, detail="questions required for quiz lessons")
     if lesson_in.type == "document" and not lesson_in.content:
         raise HTTPException(status_code=422, detail="content required for document lessons")
@@ -195,7 +194,7 @@ async def update_lesson(
         },
         array_filters=[
             {"ch.chapter_id": chapter_id},
-            {"lsn.lesson_id": lesson_id}
+            {"ls.lesson_id": lesson_id}
         ]
     )
     if result.matched_count == 0:
@@ -223,7 +222,6 @@ async def delete_lesson(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Course, chapter, or lesson not found")
-    return {"message": "Lesson deleted"}
 
 # PUT /api/courses/{course_id}/reorder
 class ReorderRequest(BaseModel):

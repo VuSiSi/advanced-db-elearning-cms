@@ -4,6 +4,9 @@ from app.middleware.auth import get_current_user, require_student, TokenData
 from app.database import get_db
 from bson import ObjectId
 from datetime import datetime, timezone
+from typing import Optional
+
+score: Optional[float] = None  # global variable to hold quiz score temporarily, to be set by quiz submission route and read by lesson completion route
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
 

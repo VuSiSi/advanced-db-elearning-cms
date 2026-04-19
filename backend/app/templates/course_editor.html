@@ -77,7 +77,7 @@ function renderTree(course) {
               data-lesson-id="${ls.lesson_id}"
               data-chapter-id="${ch.chapter_id}"
               draggle="true"
-              onclick="selectLesson('${ls.lesson_id}', '${ls.type}', '${ls.title}')">
+              onclick="selectLesson('${ls.lesson_id}','${ch.chapter_id}', '${ls.type}', '${ls.title}')">
             <span class="lesson-icon">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
             <span>${ls.title}</span>
           </div>
@@ -192,18 +192,6 @@ function selectLesson(lessonId, chapterId, type, title) {
   }
 }
 
-function addChapter() {
-  const name = prompt('Chapter title:');
-  if (!name) return;
-  alert('TODO Day 2: POST /api/courses/:id/chapters — ' + name);
-}
-
-function addLesson(chapterId) {
-  const name = prompt('Lesson title:');
-  if (!name) return;
-  alert('TODO Day 2: POST /api/courses/:id/chapters/:ch/lessons — ' + name);
-}
-
 const courseId = "{{ course_id }}";  // Jinja2 inject from pages.py
 
 async function loadCourse() {
@@ -216,6 +204,7 @@ async function loadCourse() {
     if (!res.ok) throw new Error("Failed to load course");
     const course = await res.json();
     renderTree(course);
+    enableDragDrop(course);
   } catch (err) {
     document.getElementById('course-tree').innerHTML =
       `<p class="error-state">${err.message}</p>`;

@@ -56,6 +56,11 @@ pip install -r requirements.txt
 ```
 
 ### 3. Configure environment
+Get JWT_SECRET_KEY:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
 Edit `backend/.env`:
 ```
 MONGODB_URL=mongodb://localhost:27017

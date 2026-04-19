@@ -175,6 +175,9 @@ async def update_lesson(
 ):
     # Update a lesson's content. Validates lesson type vs fields.
     db = get_db()
+
+    lesson_dict = lesson_in.model_dump(exclude_unset=True)
+
     result = await db.courses.update_one(
         {
             "_id": ObjectId(course_id),
@@ -183,12 +186,12 @@ async def update_lesson(
         },
         {
             "$set": {
-                "chapters.$[ch].lessons.$[ls].title": lesson_in.title,
-                "chapters.$[ch].lessons.$[ls].type": lesson_in.type,
-                "chapters.$[ch].lessons.$[ls].video_url": lesson_in.video_url,
-                "chapters.$[ch].lessons.$[ls].duration_seconds": lesson_in.duration_seconds,
-                "chapters.$[ch].lessons.$[ls].content": lesson_in.content,
-                "chapters.$[ch].lessons.$[ls].questions": lesson_in.questions,
+                "chapters.$[ch].lessons.$[ls].title": lesson_dict.get("title"),
+                "chapters.$[ch].lessons.$[ls].type": lesson_dict.get("type"),
+                "chapters.$[ch].lessons.$[ls].video_url": lesson_dict.get("video_url"),
+                "chapters.$[ch].lessons.$[ls].duration_seconds": lesson_dict.get("duration_seconds"),
+                "chapters.$[ch].lessons.$[ls].content": lesson_dict.get("content"),
+                "chapters.$[ch].lessons.$[ls].questions": lesson_dict.get("questions"),
                 "updated_at": datetime.now(timezone.utc),
             }
         },

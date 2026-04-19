@@ -48,8 +48,13 @@ async def mark_lesson_complete(
         raise HTTPException(status_code=403, detail="Cannot update other student's progress")
     
     db = get_db()
-    # Lấy course để biết tổng số lessons
-    course = await db.courses.find_one({"_id": ObjectId(course_id)})
+    # Check course and lesson exist to prevent writing progress for invalid lesson
+    try:
+        course_oid = ObjectId(course_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course ID")
+        
+    course = await db.courses.find_one({"_id": course_oid})
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
     
@@ -57,9 +62,8 @@ async def mark_lesson_complete(
     for ch in course.get("chapters", []):
         total_lessons += len(ch.get("lessons", []))
     if total_lessons == 0:
-        total_lessons = 1  # tránh chia 0
+        total_lessons = 1  # Avoid DivisionByZero
     
-    # Tìm progress document
     progress = await db.student_progress.find_one({
         "student_id": student_id,
         "course_id": course_id
@@ -68,35 +72,35 @@ async def mark_lesson_complete(
     now = datetime.now(timezone.utc)
     completion = {
         "lesson_id": lesson_id,
-        "completed_at": now,
+        "completed_at": now.isoformat(),
         "score": score
     }
     
     if not progress:
-        # Tạo mới
+        # Create new progress document
         new_progress = {
             "student_id": student_id,
             "course_id": course_id,
             "lesson_completions": [completion],
             "overall_progress_pct": (1 / total_lessons) * 100,
-            "last_updated": now
+            "last_updated": now.isoformat()
         }
         result = await db.student_progress.insert_one(new_progress)
-        return {"id": str(result.inserted_id), **new_progress}
+        new_progress["id"] = str(result.inserted_id)
+        return new_progress
     else:
-        # Cập nhật: nếu lesson đã có thì ghi đè hoặc bỏ qua
+        # Update: find existing completion for this lesson or add new one
         existing_completions = progress.get("lesson_completions", [])
-        # Tìm và thay thế hoặc thêm mới
         updated = False
-        for idx, lc in enumerate(existing_completions):
+        for i, lc in enumerate(existing_completions):
             if lc["lesson_id"] == lesson_id:
-                existing_completions[idx] = completion
+                existing_completions[i] = completion
                 updated = True
                 break
         if not updated:
             existing_completions.append(completion)
         
-        # Tính lại % hoàn thành
+        # Recalculate overall progress pct
         completed_count = len(set(lc["lesson_id"] for lc in existing_completions))
         overall_pct = (completed_count / total_lessons) * 100
         
@@ -105,7 +109,7 @@ async def mark_lesson_complete(
             {"$set": {
                 "lesson_completions": existing_completions,
                 "overall_progress_pct": overall_pct,
-                "last_updated": now
+                "last_updated": now.isoformat()
             }}
         )
         return {"message": "progress updated", "overall_progress_pct": overall_pct}

@@ -4,6 +4,21 @@
 (function () {
   const token = localStorage.getItem('token');
   const navLinks = document.getElementById('nav-links');
+  const path = window.location.pathname;
+  if (!navLinks) return;
+
+  // If not logged in, redirect to login page except when already on login page
+  if (!token && path !== '/login') {
+    window.location.href = '/login';
+    return;
+  }
+
+  // If logged in, redirect to courses page
+  if (token && path === '/login') {
+    window.location.href = '/courses';
+    return;
+  }
+
   if (!navLinks) return;
 
   if (!token) {
@@ -21,9 +36,6 @@
     role = payload.role || '';
   } catch {}
 
-  // "+ New Course" removed from navbar — course creation is now handled via
-  // a modal on the courses page, keeping users in context.
-  // Both roles share the same nav structure: Courses | Logout
   navLinks.innerHTML = `
     <a href="/courses">Courses</a>
     <span style="color:var(--border-hover);margin:0 2px;user-select:none">|</span>

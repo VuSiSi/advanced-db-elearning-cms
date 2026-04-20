@@ -87,8 +87,6 @@ function renderTree(course) {
               data-lesson-type="${esc(ls.type)}"
               data-lesson-title="${esc(ls.title)}"
               draggable="true">
-            <!-- BUG 1 FIXED: draggable (was draggle) -->
-            <!-- BUG 3 FIXED: onclick replaced with data-* attributes, listener added below -->
             <span class="lesson-icon">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
             <span>${esc(ls.title)}</span>
           </div>
@@ -108,7 +106,7 @@ function renderTree(course) {
         el.dataset.lessonId,
         el.dataset.chapterId,
         el.dataset.lessonType,
-        el.dataset.lessonTitle   // safe: read from DOM property, not re-parsed as JS
+        el.dataset.lessonTitle
       );
     });
   });
@@ -210,15 +208,232 @@ function selectLesson(lessonId, chapterId, type, title) {
     `;
 
   } else if (type === 'quiz') {
-    panel.innerHTML = `
-      <div class="content-header">
-        <h3>${esc(title)}</h3>
-        <span class="badge badge-quiz">Quiz</span>
-      </div>
-      <p class="muted">Quiz editor — Day 4</p>
-    `;
+    // Delegate to async loader so we can fetch existing questions first
+    loadQuizEditor(lessonId, chapterId, title);
   }
 }
+
+// ─────────────────────────────────────────────────────────
+// QUIZ EDITOR
+// State: quizState holds lessonId, chapterId, title, and
+//        the working copy of questions being edited.
+// Flow:  loadQuizEditor → fetch questions from API
+//        → store in quizState → _renderQuizPanel()
+//        On add/remove: _syncQuestionsFromDOM() first,
+//        mutate quizState.questions, then re-render.
+//        On save: _syncQuestionsFromDOM() → PUT to API.
+// ─────────────────────────────────────────────────────────
+let quizState = { lessonId: null, chapterId: null, title: '', questions: [] };
+
+async function loadQuizEditor(lessonId, chapterId, title) {
+  const panel = document.getElementById('content-panel');
+  panel.innerHTML = '<div class="loading">Loading quiz...</div>';
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load course');
+    const course = await res.json();
+
+    let questions = [];
+    for (const ch of course.chapters) {
+      if (ch.chapter_id === chapterId) {
+        const lesson = ch.lessons.find(l => l.lesson_id === lessonId);
+        if (lesson) {
+          // Normalize: ensure every question always has exactly 4 option slots
+          questions = JSON.parse(JSON.stringify(lesson.questions || [])).map(q => ({
+            ...q,
+            options: [...(q.options || []), '', '', '', ''].slice(0, 4),
+          }));
+        }
+        break;
+      }
+    }
+
+    quizState = { lessonId, chapterId, title, questions };
+    _renderQuizPanel();
+  } catch (err) {
+    document.getElementById('content-panel').innerHTML =
+      `<p class="error-state">${err.message}</p>`;
+  }
+}
+
+function _renderQuizPanel() {
+  const panel = document.getElementById('content-panel');
+  const { title, questions } = quizState;
+
+  // Build HTML for each question card
+  const questionsHtml = questions.length === 0
+    ? `<p class="muted" style="padding:16px 0">
+         No questions yet. Click <strong>+ Add Question</strong> to get started.
+       </p>`
+    : questions.map((q, qi) => `
+        <div style="border:0.5px solid var(--border);border-radius:var(--radius);
+                    padding:16px;margin-bottom:14px;background:var(--bg)">
+          <!-- Question header row -->
+          <div style="display:flex;justify-content:space-between;
+                      align-items:center;margin-bottom:12px">
+            <span style="font-size:13px;font-weight:600;
+                         color:var(--text-secondary)">Question ${qi + 1}</span>
+            <button class="btn btn-sm"
+                    style="color:#A32D2D;border-color:#A32D2D;padding:3px 9px"
+                    onclick="removeQuizQuestion(${qi})">
+              Remove
+            </button>
+          </div>
+
+          <!-- Question text -->
+          <div class="form-group">
+            <label>Question Text</label>
+            <textarea id="q-text-${qi}" rows="2"
+                      placeholder="e.g. What is the time complexity of binary search?"
+                      style="resize:vertical">${esc(q.question)}</textarea>
+          </div>
+
+          <!-- Options (fixed 4 slots) -->
+          <label style="display:block;font-size:12px;font-weight:500;
+                        color:var(--text-secondary);margin-bottom:8px;
+                        text-transform:uppercase;letter-spacing:0.04em">
+            Options
+          </label>
+          ${[0, 1, 2, 3].map(oi => `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <input type="radio"
+                     name="q-correct-${qi}"
+                     value="${oi}"
+                     ${q.correct_index === oi ? 'checked' : ''}
+                     title="Mark as correct answer"
+                     style="flex-shrink:0;width:16px;height:16px;
+                            accent-color:var(--teal-600);cursor:pointer" />
+              <input type="text"
+                     id="q-opt-${qi}-${oi}"
+                     value="${esc(q.options[oi] || '')}"
+                     placeholder="Option ${oi + 1}"
+                     style="flex:1" />
+            </div>`).join('')}
+
+          <p style="font-size:11px;color:var(--text-muted);margin-top:4px">
+            🟢 Click the circle to mark the correct answer
+          </p>
+        </div>`).join('');
+
+  panel.innerHTML = `
+    <div class="content-header">
+      <h3>${esc(title)}</h3>
+      <span class="badge badge-quiz">Quiz</span>
+    </div>
+
+    <!-- Question count info -->
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
+      ${questions.length} question${questions.length !== 1 ? 's' : ''}
+    </p>
+
+    <!-- Questions list -->
+    <div id="quiz-questions-container">${questionsHtml}</div>
+
+    <!-- Add question button -->
+    <button class="btn" style="margin-top:4px" onclick="addQuizQuestion()">
+      + Add Question
+    </button>
+
+    <!-- Save row -->
+    <div style="margin-top:24px;padding-top:16px;
+                border-top:0.5px solid var(--border);
+                display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" onclick="saveQuiz()">Save Quiz</button>
+      <span id="quiz-save-status" style="font-size:13px"></span>
+    </div>
+  `;
+}
+
+// Sync DOM input values back into quizState before any mutation
+function _syncQuestionsFromDOM() {
+  quizState.questions = quizState.questions.map((q, qi) => {
+    const questionEl = document.getElementById(`q-text-${qi}`);
+    const correctEl  = document.querySelector(`input[name="q-correct-${qi}"]:checked`);
+    const options    = [0, 1, 2, 3].map(oi => {
+      const el = document.getElementById(`q-opt-${qi}-${oi}`);
+      return el ? el.value : (q.options[oi] || '');
+    });
+    return {
+      question:      questionEl ? questionEl.value : q.question,
+      options,
+      correct_index: correctEl  ? parseInt(correctEl.value) : q.correct_index,
+    };
+  });
+}
+
+function addQuizQuestion() {
+  _syncQuestionsFromDOM(); // preserve edits before re-render
+  quizState.questions.push({ question: '', options: ['', '', '', ''], correct_index: 0 });
+  _renderQuizPanel();
+  // Scroll new card into view
+  const container = document.getElementById('quiz-questions-container');
+  if (container && container.lastElementChild) {
+    container.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function removeQuizQuestion(qi) {
+  _syncQuestionsFromDOM(); // preserve edits before splice
+  quizState.questions.splice(qi, 1);
+  _renderQuizPanel();
+}
+
+async function saveQuiz() {
+  _syncQuestionsFromDOM();
+  const statusEl = document.getElementById('quiz-save-status');
+
+  // Validate each question has text and at least 2 non-empty options
+  for (let i = 0; i < quizState.questions.length; i++) {
+    const q = quizState.questions[i];
+    if (!q.question.trim()) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: question text is required.`;
+      return;
+    }
+    const filled = q.options.filter(o => o.trim());
+    if (filled.length < 2) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: at least 2 options are required.`;
+      return;
+    }
+    // Ensure correct_index points at a non-empty option
+    if (!q.options[q.correct_index]?.trim()) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: the selected correct option is empty.`;
+      return;
+    }
+  }
+
+  if (statusEl) statusEl.textContent = 'Saving...';
+
+  const body = {
+    title:     quizState.title,
+    order:     0,
+    type:      'quiz',
+    questions: quizState.questions.map(q => ({
+      question:      q.question.trim(),
+      options:       q.options, // keep all 4 slots; backend accepts variable-length
+      correct_index: q.correct_index,
+    })),
+  };
+
+  const res = await fetch(
+    `/api/courses/${courseId}/chapters/${quizState.chapterId}/lessons/${quizState.lessonId}`,
+    { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) }
+  );
+
+  if (res.ok) {
+    statusEl.style.color = 'var(--teal-600)';
+    statusEl.textContent = 'Saved!';
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
+    loadCourse(); // refresh sidebar tree
+  } else {
+    statusEl.style.color = '#A32D2D';
+    statusEl.textContent = 'Save failed.';
+  }
+}
+// ─── End Quiz Editor ──────────────────────────────────────
 
 const courseId = "{{ course_id }}";
 
@@ -268,7 +483,6 @@ async function createCourse() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to create course');
-    // Redirect to the real editor with the new course ID
     window.location.href = `/courses/${data.id}`;
   } catch (err) {
     errBox.textContent = err.message;

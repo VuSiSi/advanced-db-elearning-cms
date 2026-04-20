@@ -16,7 +16,7 @@ def _course_from_doc(doc: dict) -> dict:
 # GET /api/courses
 @router.get("/")
 async def list_courses():
-    # List all courses — public, no auth required.
+    # List all courses with basic info (no chapters/lessons).
     db = get_db()
     courses = await db.courses.find({}, {"chapters": 0}).to_list(100)
     return [_course_from_doc(c) for c in courses]
@@ -45,7 +45,6 @@ async def create_course(
 @router.get("/{course_id}")
 async def get_course(course_id: str):
     # Get full course structure (chapters + lessons) in ONE query.
-    # This is the core MongoDB advantage — no JOINs needed.
     db = get_db()
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
@@ -89,9 +88,7 @@ async def delete_course(
     course_id: str,
     token_data: TokenData = Depends(require_instructor),
 ):
-    # Permanently delete a course and all its embedded chapters/lessons.
-    # Also cleans up all related student_progress documents to avoid orphaned data.
-    # Instructor only — and only the owning instructor can delete.
+    # Permanently delete a course and all its embedded chapters/lessons. Instructor only.
     db = get_db()
     try:
         oid = ObjectId(course_id)
@@ -106,8 +103,6 @@ async def delete_course(
             status_code=404,
             detail="Course not found or you don't have permission to delete it",
         )
-
-    # Clean up orphaned progress records for the deleted course
     await db.student_progress.delete_many({"course_id": course_id})
 
 # POST /api/courses/{course_id}/chapters
@@ -126,7 +121,7 @@ async def add_chapter(
 
     chapter = Chapter(**chapter_in.model_dump())
     result = await db.courses.update_one(
-        {"_id": oid},
+        {"_id": oid, "instructor_id": token_data.user_id},
         {
             "$push": {"chapters": chapter.model_dump()},
             "$set":  {"updated_at": datetime.now(timezone.utc)},
@@ -143,7 +138,7 @@ async def delete_chapter(
     chapter_id: str,
     token_data: TokenData = Depends(require_instructor)
 ):
-    # Delete a chapter (and all its lessons). Instructor only.
+    # Delete a chapter and all its embedded lessons from a course. Instructor only.
     db = get_db()
     try:
         oid = ObjectId(course_id)
@@ -151,7 +146,7 @@ async def delete_chapter(
         raise HTTPException(status_code=400, detail="Invalid course ID")
 
     result = await db.courses.update_one(
-        {"_id": oid},
+        {"_id": oid, "instructor_id": token_data.user_id},
         {
             "$pull": {"chapters": {"chapter_id": chapter_id}},
             "$set": {"updated_at": datetime.now(timezone.utc)}
@@ -159,7 +154,7 @@ async def delete_chapter(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Course not found")
-    
+
 # POST /api/courses/{course_id}/chapters/{chapter_id}/lessons
 @router.post("/{course_id}/chapters/{chapter_id}/lessons", status_code=201)
 async def add_lesson(
@@ -171,12 +166,11 @@ async def add_lesson(
     # Add a lesson to a chapter. Validates lesson type vs fields.
     db = get_db()
 
-    # Validate: each lesson type must carry its required fields
-    if lesson_in.type == "video" and not lesson_in.video_url:
+    if lesson_in.type == "video" and lesson_in.video_url is None:
         raise HTTPException(status_code=422, detail="video_url required for video lessons")
     if lesson_in.type == "quiz" and lesson_in.questions is None:
         raise HTTPException(status_code=422, detail="questions required for quiz lessons")
-    if lesson_in.type == "document" and not lesson_in.content:
+    if lesson_in.type == "document" and lesson_in.content is None:
         raise HTTPException(status_code=422, detail="content required for document lessons")
 
     lesson = Lesson(**lesson_in.model_dump())
@@ -200,9 +194,8 @@ async def update_lesson(
     lesson_in: LessonCreate,
     token_data: TokenData = Depends(require_instructor),
 ):
-    # Update a lesson's content. Validates lesson type vs fields.
+    # Update a lesson's content and metadata. Validates lesson type vs fields. Instructor only.
     db = get_db()
-
     lesson_dict = lesson_in.model_dump(exclude_unset=True)
 
     result = await db.courses.update_one(
@@ -239,6 +232,7 @@ async def delete_lesson(
     lesson_id: str,
     token_data: TokenData = Depends(require_instructor),
 ):
+    # Delete a lesson from a chapter. Instructor only.
     db = get_db()
     result = await db.courses.update_one(
         {
@@ -263,7 +257,7 @@ async def reorder_course(
     reorder_in: ReorderRequest,
     token_data: TokenData = Depends(require_instructor),
 ):
-    # Reorder chapters and lessons based on the provided structure.
+    # Reorder chapters and lessons based on the provided structure. Instructor only.
     db = get_db()
     result = await db.courses.update_one(
         {"_id": ObjectId(course_id)},

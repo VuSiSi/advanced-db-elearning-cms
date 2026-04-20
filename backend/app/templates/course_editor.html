@@ -514,7 +514,7 @@ async function confirmNewLesson(chapterId) {
     order: 0,
     type,
     ...(type === 'video'    && { video_url: 'https://placeholder.com', duration_seconds: 0 }),
-    ...(type === 'document' && { content: '' }),
+    ...(type === 'document' && { content: ' ' }),
     ...(type === 'quiz'     && { questions: [] }),
   };
 

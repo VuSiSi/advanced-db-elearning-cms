@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter(tags=["pages"])
@@ -9,9 +10,7 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/", include_in_schema=False)
 async def index(request: Request):
     """Redirect root to /courses."""
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/courses")
-
 
 @router.get("/login", include_in_schema=False)
 async def login_page(request: Request):
@@ -21,23 +20,24 @@ async def login_page(request: Request):
 
 @router.get("/courses", include_in_schema=False)
 async def courses_page(request: Request):
-    """Course catalog page."""
+    """Course catalog page — course creation is handled via modal on this page."""
     return templates.TemplateResponse("courses.html", {"request": request})
 
 
 @router.get("/courses/new", include_in_schema=False)
-async def new_course_page(request: Request):
-    """Course editor — create a new course (instructor only)."""
-    return templates.TemplateResponse(
-        "course_editor.html",
-        {"request": request, "course_id": ""},
-    )
+async def new_course_redirect(request: Request):
+    """
+    /courses/new no longer exists as a standalone page.
+    Course creation is now a modal on /courses.
+    Redirect anyone who lands here (e.g. stale bookmark) back to the list.
+    """
+    return RedirectResponse(url="/courses")
 
 
 @router.get("/courses/{course_id}", include_in_schema=False)
 async def course_detail_page(course_id: str, request: Request):
     """
-    Course editor / viewer for a specific course.
+    Course editor for an existing course.
     course_id is passed to the template so JS can call
     GET /api/courses/{course_id} to load real data.
     """

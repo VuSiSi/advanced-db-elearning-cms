@@ -9,8 +9,9 @@
     <h1 class="co-page-title">Course Overview</h1>
     <p class="co-page-sub">Browse and continue your learning journey</p>
   </div>
+  <!-- onclick now opens a modal instead of navigating to /courses/new -->
   <button class="co-btn-new" id="btn-create-course" style="display:none"
-          onclick="window.location.href='/courses/new'">
+          onclick="openCreateModal()">
     <span class="co-btn-icon">+</span> New Course
   </button>
 </div>
@@ -83,6 +84,54 @@
   <p class="co-empty-sub">Try adjusting your search or filters</p>
 </div>
 
+<!-- ── Create Course Modal ───────────────────────────────── -->
+<div id="create-modal-overlay"
+     style="display:none; position:fixed; inset:0;
+            background:rgba(0,0,0,0.45); z-index:200;
+            align-items:center; justify-content:center;">
+  <div style="background:var(--bg); border-radius:var(--radius-lg);
+              padding:28px; width:100%; max-width:440px;
+              border:0.5px solid var(--border);
+              box-shadow:0 16px 40px rgba(0,0,0,0.15);">
+
+    <!-- Modal header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 style="font-size:17px;font-weight:600">New Course</h2>
+      <button onclick="closeCreateModal()"
+              style="background:none;border:none;cursor:pointer;
+                     font-size:18px;color:var(--text-muted);line-height:1;padding:4px">
+        ✕
+      </button>
+    </div>
+
+    <div id="create-modal-error" class="alert alert-error hidden"></div>
+
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="create-modal-title"
+             placeholder="e.g. Introduction to Python"
+             onkeydown="if(event.key==='Enter') submitCreateCourse()" />
+    </div>
+    <div class="form-group">
+      <label>Description
+        <span style="font-weight:400;color:var(--text-muted);text-transform:none;
+                     letter-spacing:0">(optional)</span>
+      </label>
+      <textarea id="create-modal-desc" rows="3"
+                placeholder="Short description..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn" onclick="closeCreateModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCreateCourse()"
+              style="flex:1">
+        Create Course
+      </button>
+    </div>
+
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -92,7 +141,6 @@
    Uses existing CSS variables from style.css
    ═══════════════════════════════════════════════════════════ */
 
-/* Gradient palettes for course banners (cycles through these) */
 :root {
   --grad-1: linear-gradient(135deg, #c9a227 0%, #e8c547 50%, #b8941f 100%);
   --grad-2: linear-gradient(135deg, #e8547a 0%, #f472b6 50%, #c94070 100%);
@@ -120,10 +168,7 @@
   color: var(--text);
   margin-bottom: 4px;
 }
-.co-page-sub {
-  font-size: 13px;
-  color: var(--text-muted);
-}
+.co-page-sub { font-size: 13px; color: var(--text-muted); }
 .co-btn-new {
   display: inline-flex;
   align-items: center;
@@ -194,7 +239,7 @@
 }
 .co-search:focus { border-color: var(--purple-600); }
 
-/* View toggle buttons */
+/* View toggle */
 .co-view-toggle {
   display: flex;
   border: 0.5px solid var(--border-hover);
@@ -215,13 +260,8 @@
 }
 .co-view-btn svg { width: 14px; height: 14px; }
 .co-view-btn.active,
-.co-view-btn:hover {
-  background: var(--bg-tertiary);
-  color: var(--text);
-}
-.co-view-btn + .co-view-btn {
-  border-left: 0.5px solid var(--border-hover);
-}
+.co-view-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.co-view-btn + .co-view-btn { border-left: 0.5px solid var(--border-hover); }
 
 /* ── Grid layout ───────────────────── */
 .co-grid {
@@ -229,9 +269,7 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
 }
-.co-grid.list-view {
-  grid-template-columns: 1fr;
-}
+.co-grid.list-view { grid-template-columns: 1fr; }
 
 /* ── Course card ───────────────────── */
 .co-card {
@@ -250,19 +288,12 @@
   box-shadow: 0 8px 24px rgba(0,0,0,0.10);
   border-color: var(--border-hover);
 }
-
-/* Banner area with geometric SVG overlay */
 .co-card-banner {
   position: relative;
   height: 140px;
   overflow: hidden;
 }
-.co-card-banner-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
+.co-card-banner-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .co-card-banner-svg {
   position: absolute;
   inset: 0;
@@ -301,11 +332,7 @@
   color: #fff;
 }
 .co-card-menu:hover { background: rgba(0,0,0,0.6); }
-
-/* Card body */
-.co-card-body {
-  padding: 14px 16px 16px;
-}
+.co-card-body { padding: 14px 16px 16px; }
 .co-card-title {
   font-size: 14px;
   font-weight: 600;
@@ -334,32 +361,12 @@
   align-items: center;
   justify-content: space-between;
 }
-.co-card-instructor {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.co-card-lessons {
-  font-size: 11px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+.co-card-instructor { font-size: 11px; color: var(--text-muted); }
 
 /* LIST VIEW overrides */
-.list-view .co-card {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-}
-.list-view .co-card-banner {
-  height: auto;
-  min-height: 100px;
-}
-.list-view .co-card-body {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
+.list-view .co-card { display: grid; grid-template-columns: 180px 1fr; }
+.list-view .co-card-banner { height: auto; min-height: 100px; }
+.list-view .co-card-body { display: flex; flex-direction: column; justify-content: center; }
 
 /* ── Loading spinner ───────────────── */
 .co-loading {
@@ -393,12 +400,7 @@
   display: block;
   color: var(--border-hover);
 }
-.co-empty-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
+.co-empty-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .co-empty-sub { font-size: 13px; }
 
 /* ── Animations ────────────────────── */
@@ -406,11 +408,8 @@
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes co-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes co-spin { to { transform: rotate(360deg); } }
 
-/* Staggered entry for cards */
 .co-card:nth-child(1) { animation-delay: 0.00s; }
 .co-card:nth-child(2) { animation-delay: 0.05s; }
 .co-card:nth-child(3) { animation-delay: 0.10s; }
@@ -423,19 +422,17 @@
 </style>
 
 <script>
-// Color palettes for banner gradients (cycles by index)
 const GRADIENTS = [
-  ['#c9a227', '#e8c547', '#b8941f'],   // gold
-  ['#e8547a', '#f472b6', '#c94070'],   // pink
-  ['#7c5cbf', '#a78bfa', '#6047b0'],   // violet
-  ['#2ab8a0', '#34d399', '#1a9d88'],   // teal
-  ['#3b82f6', '#60a5fa', '#2563eb'],   // blue
-  ['#6b6b6b', '#9ca3af', '#4b4b4b'],   // slate
-  ['#f97316', '#fb923c', '#ea6610'],   // orange
-  ['#06b6d4', '#22d3ee', '#0891b2'],   // cyan
+  ['#c9a227', '#e8c547', '#b8941f'],
+  ['#e8547a', '#f472b6', '#c94070'],
+  ['#7c5cbf', '#a78bfa', '#6047b0'],
+  ['#2ab8a0', '#34d399', '#1a9d88'],
+  ['#3b82f6', '#60a5fa', '#2563eb'],
+  ['#6b6b6b', '#9ca3af', '#4b4b4b'],
+  ['#f97316', '#fb923c', '#ea6610'],
+  ['#06b6d4', '#22d3ee', '#0891b2'],
 ];
 
-// Geometric SVG patterns for banner decoration
 function geomPattern(seed) {
   const r = (n) => ((seed * 9301 + n * 49297) % 233280) / 233280;
   const shapes = [];
@@ -450,33 +447,24 @@ function geomPattern(seed) {
   return shapes.join('');
 }
 
-// Count total lessons in a course
-function countLessons(course) {
-  return (course.chapters || []).reduce((sum, ch) =>
-    sum + (ch.lessons || []).length, 0);
-}
-
-// Render a single course card
+// Lesson counter removed from card footer (always showed 0 — misleading)
 function renderCard(course, index) {
-  const grad = GRADIENTS[index % GRADIENTS.length];
+  const grad    = GRADIENTS[index % GRADIENTS.length];
   const pattern = geomPattern(index + 1);
-  const lessonCount = countLessons(course);
 
   return `
     <div class="co-card" onclick="window.location.href='/courses/${course.id}'">
       <div class="co-card-banner">
-        <!-- Gradient background -->
         <div class="co-card-banner-bg" style="
           background: linear-gradient(135deg, ${grad[0]} 0%, ${grad[1]} 50%, ${grad[2]} 100%);
         "></div>
-        <!-- Decorative geometric SVG overlay -->
         <svg class="co-card-banner-svg" viewBox="0 0 320 140"
-             xmlns="http://www.w3.org/2000/svg"
-             preserveAspectRatio="xMidYMid slice">
+             xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
           <g transform="scale(2.5)">${pattern}</g>
         </svg>
         <span class="co-card-badge">E-Learning</span>
-        <button class="co-card-menu" onclick="event.stopPropagation(); cardMenu(event, '${course.id}')"
+        <button class="co-card-menu"
+                onclick="event.stopPropagation(); cardMenu(event, '${course.id}')"
                 title="Options">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <circle cx="8" cy="3" r="1.5"/>
@@ -492,14 +480,6 @@ function renderCard(course, index) {
           <span class="co-card-instructor">
             ${course.instructor_id ? '👤 Instructor' : ''}
           </span>
-          <span class="co-card-lessons">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-                 stroke="currentColor" stroke-width="1.5">
-              <rect x="2" y="3" width="12" height="10" rx="2"/>
-              <path d="M6 3V1M10 3V1"/>
-            </svg>
-            ${lessonCount} lesson${lessonCount !== 1 ? 's' : ''}
-          </span>
         </div>
       </div>
     </div>
@@ -507,14 +487,15 @@ function renderCard(course, index) {
 }
 
 // ── State ──────────────────────────────────────────────────
-let allCourses = [];
+let allCourses  = [];
 let currentView = 'grid';
 
 // ── Load from API ──────────────────────────────────────────
 async function loadCourses() {
   const grid = document.getElementById('course-grid');
+  grid.innerHTML = `<div class="co-loading"><div class="co-spinner"></div><span>Loading courses...</span></div>`;
   try {
-    const res = await fetch('/api/courses/');
+    const res  = await fetch('/api/courses/');
     allCourses = await res.json();
     applyFilters();
   } catch (err) {
@@ -548,10 +529,10 @@ function applyFilters() {
   grid.innerHTML = filtered.map((c, i) => renderCard(c, i)).join('');
 }
 
-// ── View toggle (grid / list) ──────────────────────────────
+// ── View toggle ────────────────────────────────────────────
 function setView(view) {
   currentView = view;
-  const grid = document.getElementById('course-grid');
+  const grid    = document.getElementById('course-grid');
   const btnGrid = document.getElementById('btn-grid');
   const btnList = document.getElementById('btn-list');
 
@@ -566,38 +547,99 @@ function setView(view) {
   }
 }
 
+// ── Card context menu ──────────────────────────────────────
 function cardMenu(event, courseId) {
-  // Tạo dropdown nhỏ
   const menu = document.createElement('div');
   menu.style.cssText = `
-    position:fixed;top:${event.clientY}px;left:${event.clientX}px;
-    background:var(--bg);border:0.5px solid var(--border);
-    border-radius:var(--radius);padding:4px;z-index:999;
-    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+    position:fixed; top:${event.clientY}px; left:${event.clientX}px;
+    background:var(--bg); border:0.5px solid var(--border);
+    border-radius:var(--radius); padding:4px; z-index:999;
+    box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:140px;
   `;
   menu.innerHTML = `
     <div onclick="window.location.href='/courses/${courseId}'"
-         style="padding:8px 12px;cursor:pointer;font-size:13px">Edit course</div>
+         style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
+         onmouseover="this.style.background='var(--bg-secondary)'"
+         onmouseout="this.style.background=''">
+      ✏️ Edit course
+    </div>
     <div onclick="window.location.href='/analytics?course_id=${courseId}'"
-         style="padding:8px 12px;cursor:pointer;font-size:13px">Analytics</div>
+         style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
+         onmouseover="this.style.background='var(--bg-secondary)'"
+         onmouseout="this.style.background=''">
+      📊 Analytics
+    </div>
   `;
   document.body.appendChild(menu);
-  // Close on outside click
   setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
 }
 
-// ── Show "New Course" button for instructors only ──────────
-const token = localStorage.getItem('token');
-if (token) {
+// ── Create course modal ────────────────────────────────────
+function openCreateModal() {
+  const overlay = document.getElementById('create-modal-overlay');
+  overlay.style.display = 'flex';
+  // Reset form state
+  document.getElementById('create-modal-title').value = '';
+  document.getElementById('create-modal-desc').value  = '';
+  document.getElementById('create-modal-error').classList.add('hidden');
+  // Auto-focus title field
+  setTimeout(() => document.getElementById('create-modal-title').focus(), 50);
+}
+
+function closeCreateModal() {
+  document.getElementById('create-modal-overlay').style.display = 'none';
+}
+
+async function submitCreateCourse() {
+  const title       = document.getElementById('create-modal-title').value.trim();
+  const description = document.getElementById('create-modal-desc').value.trim();
+  const errBox      = document.getElementById('create-modal-error');
+  errBox.classList.add('hidden');
+
+  if (!title) {
+    errBox.textContent = 'Title is required.';
+    errBox.classList.remove('hidden');
+    return;
+  }
+
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const res  = await fetch('/api/courses/', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ title, description }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to create course');
+
+    closeCreateModal();
+    await loadCourses(); // refresh grid in place — no navigation
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  }
+}
+
+// Close modal when clicking the backdrop
+document.getElementById('create-modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCreateModal();
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeCreateModal();
+});
+
+// ── Show "New Course" button for instructors only ──────────
+const _token = localStorage.getItem('token');
+if (_token) {
+  try {
+    const payload = JSON.parse(atob(_token.split('.')[1]));
     if (payload.role === 'instructor') {
       document.getElementById('btn-create-course').style.display = 'inline-flex';
     }
   } catch {}
 }
 
-// Kick off
 loadCourses();
 </script>
 {% endblock %}

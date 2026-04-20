@@ -21,18 +21,14 @@
     role = payload.role || '';
   } catch {}
 
-  if (role === 'instructor') {
-    navLinks.innerHTML = `
-      <a href="/courses">Courses</a>
-      <a href="/courses/new">+ New Course</a>
-      <a href="#" onclick="logout()">Logout</a>
-    `;
-  } else {
-    navLinks.innerHTML = `
-      <a href="/courses">Courses</a>
-      <a href="#" onclick="logout()">Logout</a>
-    `;
-  }
+  // "+ New Course" removed from navbar — course creation is now handled via
+  // a modal on the courses page, keeping users in context.
+  // Both roles share the same nav structure: Courses | Logout
+  navLinks.innerHTML = `
+    <a href="/courses">Courses</a>
+    <span style="color:var(--border-hover);margin:0 2px;user-select:none">|</span>
+    <a href="#" onclick="logout()">Logout</a>
+  `;
 })();
 
 function logout() {

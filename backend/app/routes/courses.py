@@ -83,6 +83,33 @@ async def update_course(
         raise HTTPException(status_code=404, detail="Course not found")
     return {"message": "Course updated"}
 
+# DELETE /api/courses/{course_id}
+@router.delete("/{course_id}", status_code=204)
+async def delete_course(
+    course_id: str,
+    token_data: TokenData = Depends(require_instructor),
+):
+    # Permanently delete a course and all its embedded chapters/lessons.
+    # Also cleans up all related student_progress documents to avoid orphaned data.
+    # Instructor only — and only the owning instructor can delete.
+    db = get_db()
+    try:
+        oid = ObjectId(course_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course ID")
+
+    result = await db.courses.delete_one(
+        {"_id": oid, "instructor_id": token_data.user_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found or you don't have permission to delete it",
+        )
+
+    # Clean up orphaned progress records for the deleted course
+    await db.student_progress.delete_many({"course_id": course_id})
+
 # POST /api/courses/{course_id}/chapters
 @router.post("/{course_id}/chapters", status_code=201)
 async def add_chapter(

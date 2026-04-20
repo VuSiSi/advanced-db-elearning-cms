@@ -7,19 +7,35 @@
   <!-- ── LEFT: Course tree sidebar ─────────────────── -->
   <aside class="editor-sidebar">
     <div class="sidebar-header">
-      <h2 class="sidebar-title" id="course-title">Loading...</h2>
+
+      <!-- Course title — click the pencil icon to rename inline -->
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+        <h2 class="sidebar-title" id="course-title-display"
+            style="flex:1;min-width:0;overflow:hidden;
+                   text-overflow:ellipsis;white-space:nowrap">
+          Loading...
+        </h2>
+        <button id="btn-rename-course"
+                onclick="startCourseTitleEdit()"
+                title="Rename course"
+                style="background:none;border:none;cursor:pointer;
+                       color:var(--text-muted);font-size:13px;
+                       padding:2px 4px;flex-shrink:0;line-height:1">
+          ✎
+        </button>
+      </div>
+
       <button class="btn btn-sm" id="btn-add-chapter" onclick="addChapter()">
         + Chapter
       </button>
     </div>
 
     <div class="tree-container" id="course-tree">
-      <!-- Populated by JS -->
       <div class="loading">Loading structure...</div>
     </div>
   </aside>
 
-  <!-- ── RIGHT: Lesson content panel ───────────────── -->
+  <!-- ── RIGHT: Lesson / setup content panel ────────────── -->
   <section class="editor-content">
     <div id="content-panel">
       <div class="empty-state">
@@ -29,37 +45,18 @@
   </section>
 
 </div>
-
-<!-- New-course creation overlay (shown when no courseId exists) -->
-<div id="new-course-overlay" style="display:none; position:fixed; inset:0;
-     background:rgba(0,0,0,0.45); z-index:200;
-     align-items:center; justify-content:center;">
-  <div style="background:var(--bg); border-radius:var(--radius-lg);
-              padding:28px; width:100%; max-width:420px;
-              border:0.5px solid var(--border);">
-    <h2 style="font-size:17px; font-weight:600; margin-bottom:20px;">
-      Create New Course
-    </h2>
-    <div id="new-course-error" class="alert alert-error hidden"></div>
-    <div class="form-group">
-      <label>Title</label>
-      <input type="text" id="new-title" placeholder="e.g. Introduction to Python" />
-    </div>
-    <div class="form-group">
-      <label>Description</label>
-      <textarea id="new-desc" rows="3" placeholder="Short description..."></textarea>
-    </div>
-    <button class="btn btn-primary btn-full" onclick="createCourse()">
-      Create Course
-    </button>
-  </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ── Constants & state ──────────────────────────────────────
 const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
+const courseId = "{{ course_id }}";
 
+let currentCourse          = null; // cached full course object from last API fetch
+let pendingLessonChapterId = null; // chapterId of a lesson in setup panel (not yet in DB)
+
+// ── HTML escaping helper ───────────────────────────────────
 function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -69,39 +66,125 @@ function esc(str) {
     .replace(/>/g, '&gt;');
 }
 
+// ══════════════════════════════════════════════════════════
+//  COURSE TITLE — inline editing
+// ══════════════════════════════════════════════════════════
+
+function startCourseTitleEdit() {
+  const display = document.getElementById('course-title-display');
+  // Guard: don't open a second editor if one is already active
+  if (display.querySelector('input')) return;
+
+  const currentTitle = currentCourse?.title || '';
+
+  const input = document.createElement('input');
+  input.type  = 'text';
+  input.value = currentTitle;
+  input.style.cssText = [
+    'font-size:14px', 'font-weight:600', 'padding:2px 6px',
+    'border:1px solid var(--purple-600)', 'border-radius:4px',
+    'width:100%', 'background:var(--bg)', 'color:var(--text)', 'outline:none'
+  ].join(';');
+  input.addEventListener('click', e => e.stopPropagation());
+
+  display.textContent = '';
+  display.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const newTitle = input.value.trim() || currentTitle;
+    try {
+      await fetch(`/api/courses/${courseId}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          title: newTitle,
+          description: currentCourse?.description || ''
+        })
+      });
+    } finally {
+      loadCourse(); // restore display state regardless of success/failure
+    }
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { loadCourse(); } // cancel without saving
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  TREE RENDERING
+// ══════════════════════════════════════════════════════════
+
 function renderTree(course) {
-  document.getElementById('course-title').textContent = course.title;
+  document.getElementById('course-title-display').textContent = course.title;
+
   const tree = document.getElementById('course-tree');
+
+  if (course.chapters.length === 0) {
+    tree.innerHTML = `
+      <p class="muted" style="padding:16px;font-size:13px">
+        No chapters yet — click <strong>+ Chapter</strong> above to add one.
+      </p>`;
+    return;
+  }
 
   tree.innerHTML = course.chapters.map(ch => `
     <div class="tree-chapter" id="ch-${ch.chapter_id}">
-      <div class="tree-chapter-header">
-        <span class="tree-chevron">▾</span>
-        <span class="tree-chapter-title">${esc(ch.title)}</span>
+
+      <!-- Chapter header: title + rename button -->
+      <div class="tree-chapter-header"
+           style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+        <div style="display:flex;align-items:center;gap:6px;
+                    flex:1;min-width:0;overflow:hidden">
+          <span class="tree-chevron">▾</span>
+          <span class="tree-chapter-title"
+                style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${esc(ch.title)}
+          </span>
+        </div>
+        <!-- chapter_id in data-* avoids any inline-JS quoting issues -->
+        <button class="btn-chapter-rename"
+                data-chapter-id="${esc(ch.chapter_id)}"
+                title="Rename chapter"
+                style="background:none;border:none;cursor:pointer;
+                       color:var(--text-muted);font-size:11px;
+                       padding:2px 4px;flex-shrink:0;line-height:1">
+          ✎
+        </button>
       </div>
+
+      <!-- Lessons -->
       <div class="tree-lessons">
         ${ch.lessons.map(ls => `
           <div class="tree-lesson"
-              data-lesson-id="${esc(ls.lesson_id)}"
-              data-chapter-id="${esc(ch.chapter_id)}"
-              data-lesson-type="${esc(ls.type)}"
-              data-lesson-title="${esc(ls.title)}"
-              draggable="true">
+               data-lesson-id="${esc(ls.lesson_id)}"
+               data-chapter-id="${esc(ch.chapter_id)}"
+               data-lesson-type="${esc(ls.type)}"
+               data-lesson-title="${esc(ls.title)}"
+               draggable="true">
             <span class="lesson-icon">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
             <span>${esc(ls.title)}</span>
           </div>
         `).join('')}
-        <div class="tree-add-lesson"
-             data-chapter-id="${esc(ch.chapter_id)}"
-             onclick="addLesson(this.dataset.chapterId)">
+        <div class="tree-add-lesson" data-chapter-id="${esc(ch.chapter_id)}">
           + Add lesson
         </div>
       </div>
+
     </div>
   `).join('');
 
+  // Attach all listeners after innerHTML is built
+  // (avoids inline-onclick issues with apostrophes/quotes in lesson titles)
+
   tree.querySelectorAll('.tree-lesson').forEach(el => {
     el.addEventListener('click', () => {
+      // Silently cancel any pending lesson setup — it was never written to DB
+      pendingLessonChapterId = null;
       selectLesson(
         el.dataset.lessonId,
         el.dataset.chapterId,
@@ -110,33 +193,91 @@ function renderTree(course) {
       );
     });
   });
+
+  tree.querySelectorAll('.tree-add-lesson').forEach(el => {
+    el.addEventListener('click', () => addLesson(el.dataset.chapterId));
+  });
+
+  tree.querySelectorAll('.btn-chapter-rename').forEach(el => {
+    el.addEventListener('click', () => startChapterRename(el.dataset.chapterId));
+  });
 }
 
+// ══════════════════════════════════════════════════════════
+//  CHAPTER — inline rename
+// ══════════════════════════════════════════════════════════
+
+function startChapterRename(chapterId) {
+  const chapterEl = document.getElementById(`ch-${chapterId}`);
+  if (!chapterEl) return;
+  const titleSpan = chapterEl.querySelector('.tree-chapter-title');
+  if (!titleSpan || titleSpan.querySelector('input')) return; // already editing
+
+  const currentTitle = titleSpan.textContent.trim();
+  chapterEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  const input = document.createElement('input');
+  input.type  = 'text';
+  input.value = currentTitle;
+  input.style.cssText = [
+    'font-size:13px', 'padding:2px 6px', 'width:140px',
+    'border:1px solid var(--purple-600)', 'border-radius:4px',
+    'background:var(--bg)', 'color:var(--text)', 'outline:none'
+  ].join(';');
+
+  titleSpan.textContent = '';
+  titleSpan.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const newTitle = input.value.trim() || currentTitle;
+    // There is no dedicated chapter-rename endpoint, so we use the reorder
+    // endpoint which replaces the entire chapters array. We mutate only the
+    // matching chapter's title in the cached currentCourse copy.
+    const updatedChapters = currentCourse.chapters.map(ch =>
+      ch.chapter_id === chapterId ? { ...ch, title: newTitle } : ch
+    );
+    try {
+      await fetch(`/api/courses/${courseId}/reorder`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ chapters: updatedChapters })
+      });
+    } finally {
+      loadCourse();
+    }
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { loadCourse(); } // cancel
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  DRAG & DROP — lesson reordering within a chapter
+// ══════════════════════════════════════════════════════════
+
 function enableDragDrop(course) {
-  let dragSrcId = null;
+  let dragSrcId      = null;
   let dragSrcChapter = null;
 
   document.querySelectorAll('.tree-lesson').forEach(el => {
-    el.addEventListener('dragstart', e => {
+    el.addEventListener('dragstart', () => {
       dragSrcId      = el.dataset.lessonId;
       dragSrcChapter = el.dataset.chapterId;
       el.style.opacity = '0.4';
     });
-
-    el.addEventListener('dragend', e => {
-      el.style.opacity = '1';
-    });
-
-    el.addEventListener('dragover', e => {
-      e.preventDefault();
-    });
+    el.addEventListener('dragend',  () => { el.style.opacity = '1'; });
+    el.addEventListener('dragover', e  => e.preventDefault());
 
     el.addEventListener('drop', async e => {
       e.preventDefault();
       const dropId      = el.dataset.lessonId;
       const dropChapter = el.dataset.chapterId;
-
-      if (dragSrcChapter !== dropChapter) return;
+      if (dragSrcChapter !== dropChapter || dragSrcId === dropId) return;
 
       const updatedChapters = course.chapters.map(ch => {
         if (ch.chapter_id !== dragSrcChapter) return ch;
@@ -152,13 +293,20 @@ function enableDragDrop(course) {
         headers: authHeaders(),
         body: JSON.stringify({ chapters: updatedChapters })
       });
-
       loadCourse();
     });
   });
 }
 
+// ══════════════════════════════════════════════════════════
+//  LESSON EDITOR — shown when an existing lesson is clicked
+// ══════════════════════════════════════════════════════════
+
 function selectLesson(lessonId, chapterId, type, title) {
+  document.querySelectorAll('.tree-lesson').forEach(el =>
+    el.classList.toggle('active', el.dataset.lessonId === lessonId)
+  );
+
   const panel = document.getElementById('content-panel');
 
   if (type === 'video') {
@@ -177,10 +325,12 @@ function selectLesson(lessonId, chapterId, type, title) {
         <input type="number" id="duration" placeholder="300" />
       </div>
       <button class="btn btn-primary"
-        data-lesson-id="${esc(lessonId)}"
-        data-chapter-id="${esc(chapterId)}"
-        data-lesson-type="video"
-        onclick="saveLesson(this.dataset.lessonId, this.dataset.chapterId, this.dataset.lessonType)">
+              data-lesson-id="${esc(lessonId)}"
+              data-chapter-id="${esc(chapterId)}"
+              data-lesson-type="video"
+              onclick="saveLesson(this.dataset.lessonId,
+                                  this.dataset.chapterId,
+                                  this.dataset.lessonType)">
         Save
       </button>
       <span id="save-status" style="font-size:13px;margin-left:12px"></span>
@@ -195,345 +345,219 @@ function selectLesson(lessonId, chapterId, type, title) {
       <input type="hidden" id="lesson-title" value="${esc(title)}" />
       <div class="form-group">
         <label>Content</label>
-        <textarea id="content" rows="12" placeholder="Write content here..."></textarea>
+        <textarea id="content" rows="12" 
+                  placeholder="Write content here..."></textarea>
       </div>
       <button class="btn btn-primary"
-        data-lesson-id="${esc(lessonId)}"
-        data-chapter-id="${esc(chapterId)}"
-        data-lesson-type="document"
-        onclick="saveLesson(this.dataset.lessonId, this.dataset.chapterId, this.dataset.lessonType)">
+              data-lesson-id="${esc(lessonId)}"
+              data-chapter-id="${esc(chapterId)}"
+              data-lesson-type="document"
+              onclick="saveLesson(this.dataset.lessonId,
+                                  this.dataset.chapterId,
+                                  this.dataset.lessonType)">
         Save
       </button>
       <span id="save-status" style="font-size:13px;margin-left:12px"></span>
     `;
 
   } else if (type === 'quiz') {
-    // Delegate to async loader so we can fetch existing questions first
-    loadQuizEditor(lessonId, chapterId, title);
+    panel.innerHTML = `
+      <div class="content-header">
+        <h3>${esc(title)}</h3>
+        <span class="badge badge-quiz">Quiz</span>
+      </div>
+      <p class="muted">Quiz editor — coming soon</p>
+    `;
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// QUIZ EDITOR
-// State: quizState holds lessonId, chapterId, title, and
-//        the working copy of questions being edited.
-// Flow:  loadQuizEditor → fetch questions from API
-//        → store in quizState → _renderQuizPanel()
-//        On add/remove: _syncQuestionsFromDOM() first,
-//        mutate quizState.questions, then re-render.
-//        On save: _syncQuestionsFromDOM() → PUT to API.
-// ─────────────────────────────────────────────────────────
-let quizState = { lessonId: null, chapterId: null, title: '', questions: [] };
+// ══════════════════════════════════════════════════════════
+//  ADD CHAPTER — auto-create in DB then immediately rename
+// ══════════════════════════════════════════════════════════
 
-async function loadQuizEditor(lessonId, chapterId, title) {
-  const panel = document.getElementById('content-panel');
-  panel.innerHTML = '<div class="loading">Loading quiz...</div>';
+async function addChapter() {
+  const res = await fetch(`/api/courses/${courseId}/chapters`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ title: 'New Chapter', order: 0 })
+  });
+  if (!res.ok) return;
 
-  try {
-    const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed to load course');
-    const course = await res.json();
-
-    let questions = [];
-    for (const ch of course.chapters) {
-      if (ch.chapter_id === chapterId) {
-        const lesson = ch.lessons.find(l => l.lesson_id === lessonId);
-        if (lesson) {
-          // Normalize: ensure every question always has exactly 4 option slots
-          questions = JSON.parse(JSON.stringify(lesson.questions || [])).map(q => ({
-            ...q,
-            options: [...(q.options || []), '', '', '', ''].slice(0, 4),
-          }));
-        }
-        break;
-      }
-    }
-
-    quizState = { lessonId, chapterId, title, questions };
-    _renderQuizPanel();
-  } catch (err) {
-    document.getElementById('content-panel').innerHTML =
-      `<p class="error-state">${err.message}</p>`;
-  }
+  // Chapter is auto-saved to DB with the default name.
+  // We then re-render the tree and immediately drop the user into
+  // an inline rename so they can set the real name right away.
+  const chapter = await res.json();
+  await loadCourse();
+  startChapterRename(chapter.chapter_id);
 }
 
-function _renderQuizPanel() {
+// ══════════════════════════════════════════════════════════
+//  ADD LESSON — setup panel; DB write only when confirmed
+// ══════════════════════════════════════════════════════════
+
+function addLesson(chapterId) {
+  // Any previous pending setup is discarded silently — it was never in the DB.
+  pendingLessonChapterId = chapterId;
+  showLessonSetupPanel(chapterId);
+}
+
+function showLessonSetupPanel(chapterId) {
+  // Remove active highlight — no real lesson selected yet
+  document.querySelectorAll('.tree-lesson').forEach(el => el.classList.remove('active'));
+
   const panel = document.getElementById('content-panel');
-  const { title, questions } = quizState;
-
-  // Build HTML for each question card
-  const questionsHtml = questions.length === 0
-    ? `<p class="muted" style="padding:16px 0">
-         No questions yet. Click <strong>+ Add Question</strong> to get started.
-       </p>`
-    : questions.map((q, qi) => `
-        <div style="border:0.5px solid var(--border);border-radius:var(--radius);
-                    padding:16px;margin-bottom:14px;background:var(--bg)">
-          <!-- Question header row -->
-          <div style="display:flex;justify-content:space-between;
-                      align-items:center;margin-bottom:12px">
-            <span style="font-size:13px;font-weight:600;
-                         color:var(--text-secondary)">Question ${qi + 1}</span>
-            <button class="btn btn-sm"
-                    style="color:#A32D2D;border-color:#A32D2D;padding:3px 9px"
-                    onclick="removeQuizQuestion(${qi})">
-              Remove
-            </button>
-          </div>
-
-          <!-- Question text -->
-          <div class="form-group">
-            <label>Question Text</label>
-            <textarea id="q-text-${qi}" rows="2"
-                      placeholder="e.g. What is the time complexity of binary search?"
-                      style="resize:vertical">${esc(q.question)}</textarea>
-          </div>
-
-          <!-- Options (fixed 4 slots) -->
-          <label style="display:block;font-size:12px;font-weight:500;
-                        color:var(--text-secondary);margin-bottom:8px;
-                        text-transform:uppercase;letter-spacing:0.04em">
-            Options
-          </label>
-          ${[0, 1, 2, 3].map(oi => `
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-              <input type="radio"
-                     name="q-correct-${qi}"
-                     value="${oi}"
-                     ${q.correct_index === oi ? 'checked' : ''}
-                     title="Mark as correct answer"
-                     style="flex-shrink:0;width:16px;height:16px;
-                            accent-color:var(--teal-600);cursor:pointer" />
-              <input type="text"
-                     id="q-opt-${qi}-${oi}"
-                     value="${esc(q.options[oi] || '')}"
-                     placeholder="Option ${oi + 1}"
-                     style="flex:1" />
-            </div>`).join('')}
-
-          <p style="font-size:11px;color:var(--text-muted);margin-top:4px">
-            🟢 Click the circle to mark the correct answer
-          </p>
-        </div>`).join('');
-
   panel.innerHTML = `
     <div class="content-header">
-      <h3>${esc(title)}</h3>
-      <span class="badge badge-quiz">Quiz</span>
+      <h3>New Lesson</h3>
     </div>
-
-    <!-- Question count info -->
-    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
-      ${questions.length} question${questions.length !== 1 ? 's' : ''}
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:24px">
+      Choose a name and type. The lesson is only saved after you click
+      <strong>Create Lesson</strong>.
     </p>
 
-    <!-- Questions list -->
-    <div id="quiz-questions-container">${questionsHtml}</div>
+    <div class="form-group">
+      <label>Lesson Name</label>
+      <input type="text" id="new-lesson-name"
+             placeholder="e.g. Introduction to Variables" />
+    </div>
 
-    <!-- Add question button -->
-    <button class="btn" style="margin-top:4px" onclick="addQuizQuestion()">
-      + Add Question
-    </button>
+    <div class="form-group" style="margin-top:18px">
+      <label>Lesson Type</label>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);
+                  gap:10px;margin-top:8px">
+        ${[
+          { t: 'video',    icon: '▶', label: 'Video'    },
+          { t: 'document', icon: '≡', label: 'Document' },
+          { t: 'quiz',     icon: '?', label: 'Quiz'     },
+        ].map(({ t, icon, label }) => `
+          <label id="type-card-${t}"
+                 style="border:1.5px solid var(--border);border-radius:10px;
+                        padding:18px 10px;cursor:pointer;display:flex;
+                        flex-direction:column;align-items:center;gap:8px;
+                        transition:border-color 0.15s,background 0.15s;
+                        user-select:none">
+            <input type="radio" name="lesson-type" value="${t}"
+                   style="display:none"
+                   onchange="highlightTypeCard('${t}')" />
+            <span style="font-size:24px">${icon}</span>
+            <span style="font-size:12px;font-weight:600">${label}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
 
-    <!-- Save row -->
-    <div style="margin-top:24px;padding-top:16px;
-                border-top:0.5px solid var(--border);
-                display:flex;align-items:center;gap:12px">
-      <button class="btn btn-primary" onclick="saveQuiz()">Save Quiz</button>
-      <span id="quiz-save-status" style="font-size:13px"></span>
+    <div id="lesson-setup-error" class="alert alert-error hidden"
+         style="margin-top:14px"></div>
+
+    <div style="display:flex;gap:10px;margin-top:24px">
+      <button class="btn" onclick="cancelNewLesson()">Cancel</button>
+      <button class="btn btn-primary"
+              data-chapter-id="${esc(chapterId)}"
+              onclick="confirmNewLesson(this.dataset.chapterId)"
+              style="flex:1">
+        Create Lesson
+      </button>
+    </div>
+  `;
+
+  // Enter key in the name field triggers confirm
+  document.getElementById('new-lesson-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmNewLesson(chapterId);
+  });
+  document.getElementById('new-lesson-name').focus();
+}
+
+function highlightTypeCard(selected) {
+  ['video', 'document', 'quiz'].forEach(t => {
+    const card = document.getElementById(`type-card-${t}`);
+    if (!card) return;
+    card.style.borderColor = t === selected ? 'var(--purple-600)' : 'var(--border)';
+    card.style.background  = t === selected ? 'var(--purple-50)'  : '';
+    card.style.color       = t === selected ? 'var(--purple-800)' : '';
+  });
+}
+
+// Cancel — nothing to delete from DB because lesson was never POSTed
+function cancelNewLesson() {
+  pendingLessonChapterId = null;
+  document.getElementById('content-panel').innerHTML = `
+    <div class="empty-state">
+      <p>Select a lesson from the left to view or edit its content.</p>
     </div>
   `;
 }
 
-// Sync DOM input values back into quizState before any mutation
-function _syncQuestionsFromDOM() {
-  quizState.questions = quizState.questions.map((q, qi) => {
-    const questionEl = document.getElementById(`q-text-${qi}`);
-    const correctEl  = document.querySelector(`input[name="q-correct-${qi}"]:checked`);
-    const options    = [0, 1, 2, 3].map(oi => {
-      const el = document.getElementById(`q-opt-${qi}-${oi}`);
-      return el ? el.value : (q.options[oi] || '');
-    });
-    return {
-      question:      questionEl ? questionEl.value : q.question,
-      options,
-      correct_index: correctEl  ? parseInt(correctEl.value) : q.correct_index,
-    };
-  });
-}
+// Confirm — validate inputs, then POST to DB
+async function confirmNewLesson(chapterId) {
+  const nameInput = document.getElementById('new-lesson-name');
+  const typeInput = document.querySelector('input[name="lesson-type"]:checked');
+  const errBox    = document.getElementById('lesson-setup-error');
+  errBox.classList.add('hidden');
 
-function addQuizQuestion() {
-  _syncQuestionsFromDOM(); // preserve edits before re-render
-  quizState.questions.push({ question: '', options: ['', '', '', ''], correct_index: 0 });
-  _renderQuizPanel();
-  // Scroll new card into view
-  const container = document.getElementById('quiz-questions-container');
-  if (container && container.lastElementChild) {
-    container.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const name = nameInput?.value.trim();
+  if (!name) {
+    errBox.textContent = 'Lesson name is required.';
+    errBox.classList.remove('hidden');
+    nameInput?.focus();
+    return;
   }
-}
-
-function removeQuizQuestion(qi) {
-  _syncQuestionsFromDOM(); // preserve edits before splice
-  quizState.questions.splice(qi, 1);
-  _renderQuizPanel();
-}
-
-async function saveQuiz() {
-  _syncQuestionsFromDOM();
-  const statusEl = document.getElementById('quiz-save-status');
-
-  // Validate each question has text and at least 2 non-empty options
-  for (let i = 0; i < quizState.questions.length; i++) {
-    const q = quizState.questions[i];
-    if (!q.question.trim()) {
-      statusEl.style.color = '#A32D2D';
-      statusEl.textContent = `Question ${i + 1}: question text is required.`;
-      return;
-    }
-    const filled = q.options.filter(o => o.trim());
-    if (filled.length < 2) {
-      statusEl.style.color = '#A32D2D';
-      statusEl.textContent = `Question ${i + 1}: at least 2 options are required.`;
-      return;
-    }
-    // Ensure correct_index points at a non-empty option
-    if (!q.options[q.correct_index]?.trim()) {
-      statusEl.style.color = '#A32D2D';
-      statusEl.textContent = `Question ${i + 1}: the selected correct option is empty.`;
-      return;
-    }
+  if (!typeInput) {
+    errBox.textContent = 'Please select a lesson type.';
+    errBox.classList.remove('hidden');
+    return;
   }
 
-  if (statusEl) statusEl.textContent = 'Saving...';
-
+  const type = typeInput.value;
+  // Provide minimum required fields per type to satisfy the API validator
   const body = {
-    title:     quizState.title,
-    order:     0,
-    type:      'quiz',
-    questions: quizState.questions.map(q => ({
-      question:      q.question.trim(),
-      options:       q.options, // keep all 4 slots; backend accepts variable-length
-      correct_index: q.correct_index,
-    })),
+    title: name,
+    order: 0,
+    type,
+    ...(type === 'video'    && { video_url: 'https://placeholder.com', duration_seconds: 0 }),
+    ...(type === 'document' && { content: '' }),
+    ...(type === 'quiz'     && { questions: [] }),
   };
 
   const res = await fetch(
-    `/api/courses/${courseId}/chapters/${quizState.chapterId}/lessons/${quizState.lessonId}`,
-    { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) }
+    `/api/courses/${courseId}/chapters/${chapterId}/lessons`,
+    { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) }
   );
 
-  if (res.ok) {
-    statusEl.style.color = 'var(--teal-600)';
-    statusEl.textContent = 'Saved!';
-    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
-    loadCourse(); // refresh sidebar tree
-  } else {
-    statusEl.style.color = '#A32D2D';
-    statusEl.textContent = 'Save failed.';
-  }
-}
-// ─── End Quiz Editor ──────────────────────────────────────
-
-const courseId = "{{ course_id }}";
-
-async function loadCourse() {
-  // If there is no courseId, we are on /courses/new — show the creation overlay
-  if (!courseId) {
-    document.getElementById('course-title').textContent = 'New Course';
-    document.getElementById('course-tree').innerHTML = '';
-    document.getElementById('btn-add-chapter').style.display = 'none';
-    document.getElementById('new-course-overlay').style.display = 'flex';
-    return;
-  }
-
-  document.getElementById('course-tree').innerHTML =
-    `<div class="loading">Loading structure...</div>`;
-  try {
-    const res = await fetch(`/api/courses/${courseId}`, {
-      headers: authHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to load course');
-    const course = await res.json();
-    renderTree(course);
-    enableDragDrop(course);
-  } catch (err) {
-    document.getElementById('course-tree').innerHTML =
-      `<p class="error-state">${err.message}</p>`;
-  }
-}
-
-async function createCourse() {
-  const title = document.getElementById('new-title').value.trim();
-  const description = document.getElementById('new-desc').value.trim();
-  const errBox = document.getElementById('new-course-error');
-  errBox.classList.add('hidden');
-
-  if (!title) {
-    errBox.textContent = 'Title is required.';
+  if (!res.ok) {
+    errBox.textContent = 'Failed to create lesson. Please try again.';
     errBox.classList.remove('hidden');
     return;
   }
 
-  try {
-    const res = await fetch('/api/courses/', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ title, description })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create course');
-    window.location.href = `/courses/${data.id}`;
-  } catch (err) {
-    errBox.textContent = err.message;
-    errBox.classList.remove('hidden');
-  }
+  const lesson = await res.json();
+  pendingLessonChapterId = null;
+
+  // Reload tree so the lesson appears, then open its editor immediately
+  await loadCourse();
+  selectLesson(lesson.lesson_id, chapterId, type, name);
+  document.querySelectorAll('.tree-lesson').forEach(el =>
+    el.classList.toggle('active', el.dataset.lessonId === lesson.lesson_id)
+  );
 }
 
-async function addChapter() {
-  const title = prompt('Chapter title:');
-  if (!title) return;
-  const res = await fetch(`/api/courses/${courseId}/chapters`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ title, order: 0 })
-  });
-  if (res.ok) loadCourse();
-}
-
-async function addLesson(chapterId) {
-  const title = prompt('Lesson title:');
-  if (!title) return;
-  const type  = prompt('Type (video / quiz / document):');
-  if (!['video', 'quiz', 'document'].includes(type)) {
-    alert('Invalid type'); return;
-  }
-  const body = {
-    title, order: 0, type,
-    ...(type === 'video'    && { video_url: 'https://placeholder.com', duration_seconds: 0 }),
-    ...(type === 'document' && { content: '# New lesson' }),
-    ...(type === 'quiz'     && { questions: [] }),
-  };
-  const res = await fetch(`/api/courses/${courseId}/chapters/${chapterId}/lessons`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body)
-  });
-  if (res.ok) loadCourse();
-}
+// ══════════════════════════════════════════════════════════
+//  SAVE LESSON — PUT updated content to the existing lesson
+// ══════════════════════════════════════════════════════════
 
 async function saveLesson(lessonId, chapterId, type) {
-  const statusEl = document.getElementById('save-status');
+  const statusEl       = document.getElementById('save-status');
   statusEl.textContent = 'Saving...';
+  statusEl.style.color = 'var(--text-muted)';
 
+  // Title is persisted in a hidden field so it is not lost between reloads
   const title = document.getElementById('lesson-title')?.value || 'Untitled';
 
   let body = { title, order: 0, type };
   if (type === 'video') {
-    body.video_url        = document.getElementById('video-url').value;
-    body.duration_seconds = parseInt(document.getElementById('duration').value) || 0;
+    body.video_url        = document.getElementById('video-url')?.value || '';
+    body.duration_seconds = parseInt(document.getElementById('duration')?.value) || 0;
   } else if (type === 'document') {
-    body.content = document.getElementById('content').value;
+    body.content = document.getElementById('content')?.value || '';
   }
 
   const res = await fetch(
@@ -543,12 +567,41 @@ async function saveLesson(lessonId, chapterId, type) {
 
   if (res.ok) {
     statusEl.style.color = 'var(--teal-600)';
-    statusEl.textContent = 'Saved!';
-    setTimeout(() => statusEl.textContent = '', 2000);
-    loadCourse();
+    statusEl.textContent = 'Saved ✓';
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    loadCourse(); // refresh tree so updated title appears in sidebar
   } else {
     statusEl.style.color = '#A32D2D';
     statusEl.textContent = 'Save failed.';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  LOAD COURSE — fetch fresh data and rebuild the tree
+// ══════════════════════════════════════════════════════════
+
+async function loadCourse() {
+  // Guard: if courseId is empty (e.g. direct access to /courses/new),
+  // redirect to the courses list rather than showing a broken editor.
+  if (!courseId) {
+    window.location.href = '/courses';
+    return;
+  }
+
+  document.getElementById('course-tree').innerHTML =
+    `<div class="loading">Loading structure...</div>`;
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load course');
+
+    const course  = await res.json();
+    currentCourse = course; // cache needed by rename operations
+    renderTree(course);
+    enableDragDrop(course);
+  } catch (err) {
+    document.getElementById('course-tree').innerHTML =
+      `<p class="error-state">${err.message}</p>`;
   }
 }
 

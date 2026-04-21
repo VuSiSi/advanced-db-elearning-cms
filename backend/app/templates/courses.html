@@ -132,6 +132,41 @@
   </div>
 </div>
 
+<!-- Warning Delete Course Modal -->
+<div id="delete-modal-overlay"
+     style="display:none; position:fixed; inset:0;
+            background:rgba(0,0,0,0.45); z-index:300;
+            align-items:center; justify-content:center;">
+  <div style="background:var(--bg); border-radius:var(--radius-lg);
+              padding:28px; width:100%; max-width:450px;
+              border:0.5px solid var(--border);
+              box-shadow:0 16px 40px rgba(0,0,0,0.15); text-align:center;">
+
+    <div style="font-size:40px; margin-bottom:16px;">⚠️</div>
+
+    <h2 id="delete-modal-course-title" 
+        style="font-size:18px; font-weight:600; margin-bottom:12px; color:var(--text);">
+      Course Title
+    </h2>
+    <p id="delete-modal-text" style="font-size:14px; color:var(--text-secondary); margin-bottom:24px; line-height:1.5;">
+        This will permanently remove all of its chapters and lessons<br>
+        THIS ACTION IS IRREVERSIBLE
+    </p>
+
+    <div style="display:flex; gap:12px; justify-content:center;">
+      <button class="btn" onclick="closeDeleteModal()" 
+              style="flex:1; background:#fff; color:var(--text); border:0.5px solid var(--border-hover);">
+        Cancel
+      </button>
+      <button class="btn" id="confirm-delete-btn"
+              style="flex:1; background:#A32D2D; color:#fff; border:none;">
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+
 {% endblock %}
 
 {% block scripts %}
@@ -561,13 +596,19 @@ function cardMenu(event, courseId) {
          style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
          onmouseover="this.style.background='var(--bg-secondary)'"
          onmouseout="this.style.background=''">
-      ✏️ Edit course
+      Edit course
     </div>
     <div onclick="window.location.href='/analytics?course_id=${courseId}'"
          style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
          onmouseover="this.style.background='var(--bg-secondary)'"
          onmouseout="this.style.background=''">
-      📊 Analytics
+      Analytics
+    </div>
+    <div onclick="deleteCourse('${courseId}')"
+         style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px;font-weight:500;color:#A32D2D;margin-top:4px;border-top:0.5px solid var(--border)"
+         onmouseover="this.style.background='#FCEBEB'"
+         onmouseout="this.style.background=''">
+      Delete course
     </div>
   `;
   document.body.appendChild(menu);
@@ -639,6 +680,70 @@ if (_token) {
     }
   } catch {}
 }
+
+// ── Delete Course Logic ────────────────────────────────────
+let courseToDeleteID = null;
+
+async function deleteCourse(courseId) {
+  courseToDeleteID = courseId;
+  const course = allCourses.find(c => c.id === courseId);
+  const title = course ? course.title : 'this course';
+
+  // Set course title in modal
+  document.getElementById('delete-modal-course-title').textContent =
+    `Delete "${title}"?`;
+
+  // Set up confirmation modal text
+  document.getElementById('delete-modal-text').innerHTML =
+    `This will permanently remove all of its chapters and lessons<br>
+    THIS ACTION IS IRREVERSIBLE`;
+
+  // Show modal
+  const overlay = document.getElementById('delete-modal-overlay');
+  overlay.style.display = 'flex';
+
+  // Auto-focus the Delete button
+  document.getElementById('confirm-delete-btn').onclick = submitDeleteCourse;
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal-overlay').style.display = 'none';
+  courseToDeleteID = null;
+}
+
+// Call API to delete course, then refresh list
+async function submitDeleteCourse() {
+  if (!courseToDeleteID) return;
+
+  const btn = document.getElementById('confirm-delete-btn');
+  const originalText = btn.textContent;
+  btn.textContent = 'Deleting...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/courses/${courseToDeleteID}/`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok || res.status === 204) {
+      closeDeleteModal();
+      await loadCourses(); // Refresh list after deletion
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.detail || 'Failed to delete course');
+    }
+  } catch (err) {
+    alert('Error deleting course. Please try again.');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+// Close delete modal when clicking outside the dialog
+document.getElementById('delete-modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeDeleteModal();
+});
 
 loadCourses();
 </script>

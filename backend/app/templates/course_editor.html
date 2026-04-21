@@ -2,13 +2,11 @@
 {% block title %}Course Editor — E-Learning CMS{% endblock %}
 
 {% block content %}
-<div class="editor-layout">
+<div class="editor-layout" id="editor-layout">
 
-  <!-- ── LEFT: Course tree sidebar ──────────────────────── -->
-  <aside class="editor-sidebar">
+  <aside class="editor-sidebar" id="editor-sidebar">
     <div class="sidebar-header">
 
-      <!-- Course title — click the pencil icon to rename inline -->
       <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
         <h2 class="sidebar-title" id="course-title-display"
             style="flex:1;min-width:0;overflow:hidden;
@@ -23,10 +21,18 @@
                        padding:2px 4px;flex-shrink:0;line-height:1">
           ✎
         </button>
+        <button id="btn-delete-course"
+                onclick="deleteCourse()"
+                title="Delete course"
+                style="background:none;border:none;cursor:pointer;
+                       color:#A32D2D;font-size:13px;
+                       padding:2px 4px;flex-shrink:0;line-height:1">
+          🗑️
+        </button>
       </div>
 
       <button class="btn btn-sm" id="btn-add-chapter" onclick="addChapter()">
-        + Chapter
+        + Add Chapter
       </button>
     </div>
 
@@ -35,7 +41,8 @@
     </div>
   </aside>
 
-  <!-- ── RIGHT: Lesson / setup content panel ────────────── -->
+  <div class="resizer" id="sidebar-resizer"></div>
+
   <section class="editor-content">
     <div id="content-panel">
       <div class="empty-state">
@@ -48,6 +55,33 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+  .main-content {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  
+  .editor-layout {
+    margin: 0 !important; 
+    grid-template-columns: 280px 4px 1fr !important;
+  }
+
+  .resizer {
+    background-color: var(--border);
+    cursor: col-resize;
+    transition: background-color 0.2s;
+    z-index: 10;
+  }
+  .resizer:hover, .resizer.dragging {
+    background-color: var(--purple-600);
+  }
+
+  body.no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+</style>
+
 <script>
 // ── Constants & state ──────────────────────────────────────
 const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
@@ -72,7 +106,6 @@ function esc(str) {
 
 function startCourseTitleEdit() {
   const display = document.getElementById('course-title-display');
-  // Guard: don't open a second editor if one is already active
   if (display.querySelector('input')) return;
 
   const currentTitle = currentCourse?.title || '';
@@ -104,14 +137,15 @@ function startCourseTitleEdit() {
         })
       });
     } finally {
-      loadCourse(); // restore display state regardless of success/failure
+      loadCourse(); 
     }
   };
 
-  input.addEventListener('blur', save);
+  // input.addEventListener('blur', save); 
+  
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { loadCourse(); } // cancel without saving
+    if (e.key === 'Enter')  { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { loadCourse(); }
   });
 }
 
@@ -134,8 +168,6 @@ function renderTree(course) {
 
   tree.innerHTML = course.chapters.map(ch => `
     <div class="tree-chapter" id="ch-${ch.chapter_id}">
-
-      <!-- Chapter header: title + rename button -->
       <div class="tree-chapter-header"
            style="display:flex;align-items:center;justify-content:space-between;gap:4px">
         <div style="display:flex;align-items:center;gap:6px;
@@ -146,7 +178,6 @@ function renderTree(course) {
             ${esc(ch.title)}
           </span>
         </div>
-        <!-- chapter_id in data-* avoids any inline-JS quoting issues -->
         <button class="btn-chapter-rename"
                 data-chapter-id="${esc(ch.chapter_id)}"
                 title="Rename chapter"
@@ -155,9 +186,16 @@ function renderTree(course) {
                        padding:2px 4px;flex-shrink:0;line-height:1">
           ✎
         </button>
+        <button id="btn-delete-course"
+                onclick="deleteCourse()"
+                title="Delete course"
+                style="background:none;border:none;cursor:pointer;
+                       color:#A32D2D;font-size:13px;
+                       padding:2px 4px;flex-shrink:0;line-height:1">
+          🗑️
+        </button>
       </div>
 
-      <!-- Lessons -->
       <div class="tree-lessons">
         ${ch.lessons.map(ls => `
           <div class="tree-lesson"
@@ -174,16 +212,11 @@ function renderTree(course) {
           + Add lesson
         </div>
       </div>
-
     </div>
   `).join('');
 
-  // Attach all listeners after innerHTML is built
-  // (avoids inline-onclick issues with apostrophes/quotes in lesson titles)
-
   tree.querySelectorAll('.tree-lesson').forEach(el => {
     el.addEventListener('click', () => {
-      // Silently cancel any pending lesson setup — it was never written to DB
       pendingLessonChapterId = null;
       selectLesson(
         el.dataset.lessonId,
@@ -211,7 +244,7 @@ function startChapterRename(chapterId) {
   const chapterEl = document.getElementById(`ch-${chapterId}`);
   if (!chapterEl) return;
   const titleSpan = chapterEl.querySelector('.tree-chapter-title');
-  if (!titleSpan || titleSpan.querySelector('input')) return; // already editing
+  if (!titleSpan || titleSpan.querySelector('input')) return;
 
   const currentTitle = titleSpan.textContent.trim();
   chapterEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -232,9 +265,6 @@ function startChapterRename(chapterId) {
 
   const save = async () => {
     const newTitle = input.value.trim() || currentTitle;
-    // There is no dedicated chapter-rename endpoint, so we use the reorder
-    // endpoint which replaces the entire chapters array. We mutate only the
-    // matching chapter's title in the cached currentCourse copy.
     const updatedChapters = currentCourse.chapters.map(ch =>
       ch.chapter_id === chapterId ? { ...ch, title: newTitle } : ch
     );
@@ -249,10 +279,11 @@ function startChapterRename(chapterId) {
     }
   };
 
-  input.addEventListener('blur', save);
+  // input.addEventListener('blur', save); 
+  
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { loadCourse(); } // cancel
+    if (e.key === 'Enter')  { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { loadCourse(); }
   });
 }
 
@@ -361,13 +392,8 @@ function selectLesson(lessonId, chapterId, type, title) {
     `;
 
   } else if (type === 'quiz') {
-    panel.innerHTML = `
-      <div class="content-header">
-        <h3>${esc(title)}</h3>
-        <span class="badge badge-quiz">Quiz</span>
-      </div>
-      <p class="muted">Quiz editor — coming soon</p>
-    `;
+    // Delegate to async loader so we can fetch existing questions first
+    loadQuizEditor(lessonId, chapterId, title);
   }
 }
 
@@ -383,9 +409,6 @@ async function addChapter() {
   });
   if (!res.ok) return;
 
-  // Chapter is auto-saved to DB with the default name.
-  // We then re-render the tree and immediately drop the user into
-  // an inline rename so they can set the real name right away.
   const chapter = await res.json();
   await loadCourse();
   startChapterRename(chapter.chapter_id);
@@ -396,13 +419,14 @@ async function addChapter() {
 // ══════════════════════════════════════════════════════════
 
 function addLesson(chapterId) {
-  // Any previous pending setup is discarded silently — it was never in the DB.
   pendingLessonChapterId = chapterId;
   showLessonSetupPanel(chapterId);
 }
 
+// ══════════════════════════════════════════════════════════
+//  SHOW LESSON SETUP PANEL — choose name and type before creating in DB
+// ══════════════════════════════════════════════════════════
 function showLessonSetupPanel(chapterId) {
-  // Remove active highlight — no real lesson selected yet
   document.querySelectorAll('.tree-lesson').forEach(el => el.classList.remove('active'));
 
   const panel = document.getElementById('content-panel');
@@ -460,12 +484,15 @@ function showLessonSetupPanel(chapterId) {
     </div>
   `;
 
-  // Enter key in the name field triggers confirm
   document.getElementById('new-lesson-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') confirmNewLesson(chapterId);
   });
   document.getElementById('new-lesson-name').focus();
 }
+
+// ══════════════════════════════════════════════════════════
+//  HIGHLIGHT TYPE CARD — update styling when a lesson type is selected
+// ══════════════════════════════════════════════════════════
 
 function highlightTypeCard(selected) {
   ['video', 'document', 'quiz'].forEach(t => {
@@ -477,7 +504,10 @@ function highlightTypeCard(selected) {
   });
 }
 
-// Cancel — nothing to delete from DB because lesson was never POSTed
+// ══════════════════════════════════════════════════════════
+//  CANCEL NEW LESSON — reset the lesson creation panel
+// ══════════════════════════════════════════════════════════
+
 function cancelNewLesson() {
   pendingLessonChapterId = null;
   document.getElementById('content-panel').innerHTML = `
@@ -487,7 +517,10 @@ function cancelNewLesson() {
   `;
 }
 
-// Confirm — validate inputs, then POST to DB
+// ══════════════════════════════════════════════════════════
+//  CONFIRM NEW LESSON — submit the new lesson to the server
+// ══════════════════════════════════════════════════════════
+
 async function confirmNewLesson(chapterId) {
   const nameInput = document.getElementById('new-lesson-name');
   const typeInput = document.querySelector('input[name="lesson-type"]:checked');
@@ -508,7 +541,6 @@ async function confirmNewLesson(chapterId) {
   }
 
   const type = typeInput.value;
-  // Provide minimum required fields per type to satisfy the API validator
   const body = {
     title: name,
     order: 0,
@@ -532,7 +564,6 @@ async function confirmNewLesson(chapterId) {
   const lesson = await res.json();
   pendingLessonChapterId = null;
 
-  // Reload tree so the lesson appears, then open its editor immediately
   await loadCourse();
   selectLesson(lesson.lesson_id, chapterId, type, name);
   document.querySelectorAll('.tree-lesson').forEach(el =>
@@ -549,7 +580,6 @@ async function saveLesson(lessonId, chapterId, type) {
   statusEl.textContent = 'Saving...';
   statusEl.style.color = 'var(--text-muted)';
 
-  // Title is persisted in a hidden field so it is not lost between reloads
   const title = document.getElementById('lesson-title')?.value || 'Untitled';
 
   let body = { title, order: 0, type };
@@ -569,7 +599,7 @@ async function saveLesson(lessonId, chapterId, type) {
     statusEl.style.color = 'var(--teal-600)';
     statusEl.textContent = 'Saved ✓';
     setTimeout(() => { statusEl.textContent = ''; }, 2000);
-    loadCourse(); // refresh tree so updated title appears in sidebar
+    loadCourse(); 
   } else {
     statusEl.style.color = '#A32D2D';
     statusEl.textContent = 'Save failed.';
@@ -581,8 +611,6 @@ async function saveLesson(lessonId, chapterId, type) {
 // ══════════════════════════════════════════════════════════
 
 async function loadCourse() {
-  // Guard: if courseId is empty (e.g. direct access to /courses/new),
-  // redirect to the courses list rather than showing a broken editor.
   if (!courseId) {
     window.location.href = '/courses';
     return;
@@ -596,7 +624,7 @@ async function loadCourse() {
     if (!res.ok) throw new Error('Failed to load course');
 
     const course  = await res.json();
-    currentCourse = course; // cache needed by rename operations
+    currentCourse = course; 
     renderTree(course);
     enableDragDrop(course);
   } catch (err) {
@@ -604,6 +632,256 @@ async function loadCourse() {
       `<p class="error-state">${err.message}</p>`;
   }
 }
+
+let quizState = { lessonId: null, chapterId: null, title: '', questions: [] };
+ 
+// ══════════════════════════════════════════════════════════
+// LOAD QUIZ EDITOR — fetch existing quiz data, then render the editor panel
+// ══════════════════════════════════════════════════════════
+async function loadQuizEditor(lessonId, chapterId, title) {
+  const panel = document.getElementById('content-panel');
+  panel.innerHTML = '<div class="loading">Loading quiz...</div>';
+ 
+  try {
+    const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load course');
+    const course = await res.json();
+ 
+    let questions = [];
+    for (const ch of course.chapters) {
+      if (ch.chapter_id === chapterId) {
+        const lesson = ch.lessons.find(l => l.lesson_id === lessonId);
+        if (lesson) {
+          // Normalize: ensure every question always has exactly 4 option slots
+          questions = JSON.parse(JSON.stringify(lesson.questions || [])).map(q => ({
+            ...q,
+            options: [...(q.options || []), '', '', '', ''].slice(0, 4),
+          }));
+        }
+        break;
+      }
+    }
+ 
+    quizState = { lessonId, chapterId, title, questions };
+    _renderQuizPanel();
+  } catch (err) {
+    document.getElementById('content-panel').innerHTML =
+      `<p class="error-state">${err.message}</p>`;
+  }
+}
+
+// Render the quiz editing UI based on quizState, which must be set up beforehand by loadQuizEditor
+function _renderQuizPanel() {
+  const panel = document.getElementById('content-panel');
+  const { title, questions } = quizState;
+ 
+  // Build HTML for each question card
+  const questionsHtml = questions.length === 0
+    ? `<p class="muted" style="padding:16px 0">
+         No questions yet. Click <strong>+ Add Question</strong> to get started.
+       </p>`
+    : questions.map((q, qi) => `
+        <div style="border:0.5px solid var(--border);border-radius:var(--radius);
+                    padding:16px;margin-bottom:14px;background:var(--bg)">
+          <!-- Question header row -->
+          <div style="display:flex;justify-content:space-between;
+                      align-items:center;margin-bottom:12px">
+            <span style="font-size:13px;font-weight:600;
+                         color:var(--text-secondary)">Question ${qi + 1}</span>
+            <button class="btn btn-sm"
+                    style="color:#A32D2D;border-color:#A32D2D;padding:3px 9px"
+                    onclick="removeQuizQuestion(${qi})">
+              Remove
+            </button>
+          </div>
+ 
+          <!-- Question text -->
+          <div class="form-group">
+            <label>Question Text</label>
+            <textarea id="q-text-${qi}" rows="2"
+                      placeholder="e.g. What is the time complexity of binary search?"
+                      style="resize:vertical">${esc(q.question)}</textarea>
+          </div>
+ 
+          <!-- Options (fixed 4 slots) -->
+          <label style="display:block;font-size:12px;font-weight:500;
+                        color:var(--text-secondary);margin-bottom:8px;
+                        text-transform:uppercase;letter-spacing:0.04em">
+            Options
+          </label>
+          ${[0, 1, 2, 3].map(oi => `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <input type="radio"
+                     name="q-correct-${qi}"
+                     value="${oi}"
+                     ${q.correct_index === oi ? 'checked' : ''}
+                     title="Mark as correct answer"
+                     style="flex-shrink:0;width:16px;height:16px;
+                            accent-color:var(--teal-600);cursor:pointer" />
+              <input type="text"
+                     id="q-opt-${qi}-${oi}"
+                     value="${esc(q.options[oi] || '')}"
+                     placeholder="Option ${oi + 1}"
+                     style="flex:1" />
+            </div>`).join('')}
+ 
+          <p style="font-size:11px;color:var(--text-muted);margin-top:4px">
+            🟢 Click the circle to mark the correct answer
+          </p>
+        </div>`).join('');
+ 
+  panel.innerHTML = `
+    <div class="content-header">
+      <h3>${esc(title)}</h3>
+      <span class="badge badge-quiz">Quiz</span>
+    </div>
+ 
+    <!-- Question count info -->
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
+      ${questions.length} question${questions.length !== 1 ? 's' : ''}
+    </p>
+ 
+    <!-- Questions list -->
+    <div id="quiz-questions-container">${questionsHtml}</div>
+ 
+    <!-- Add question button -->
+    <button class="btn" style="margin-top:4px" onclick="addQuizQuestion()">
+      + Add Question
+    </button>
+ 
+    <!-- Save row -->
+    <div style="margin-top:24px;padding-top:16px;
+                border-top:0.5px solid var(--border);
+                display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" onclick="saveQuiz()">Save Quiz</button>
+      <span id="quiz-save-status" style="font-size:13px"></span>
+    </div>
+  `;
+}
+ 
+// Sync DOM input values back into quizState before any mutation
+function _syncQuestionsFromDOM() {
+  quizState.questions = quizState.questions.map((q, qi) => {
+    const questionEl = document.getElementById(`q-text-${qi}`);
+    const correctEl  = document.querySelector(`input[name="q-correct-${qi}"]:checked`);
+    const options    = [0, 1, 2, 3].map(oi => {
+      const el = document.getElementById(`q-opt-${qi}-${oi}`);
+      return el ? el.value : (q.options[oi] || '');
+    });
+    return {
+      question:      questionEl ? questionEl.value : q.question,
+      options,
+      correct_index: correctEl  ? parseInt(correctEl.value) : q.correct_index,
+    };
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// QUIZ EDITOR ACTIONS — add/remove questions, save quiz
+// ══════════════════════════════════════════════════════════
+function addQuizQuestion() {
+  _syncQuestionsFromDOM(); // preserve edits before re-render
+  quizState.questions.push({ question: '', options: ['', '', '', ''], correct_index: 0 });
+  _renderQuizPanel();
+  // Scroll new card into view
+  const container = document.getElementById('quiz-questions-container');
+  if (container && container.lastElementChild) {
+    container.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+ 
+function removeQuizQuestion(qi) {
+  _syncQuestionsFromDOM(); // preserve edits before splice
+  quizState.questions.splice(qi, 1);
+  _renderQuizPanel();
+}
+ 
+async function saveQuiz() {
+  _syncQuestionsFromDOM();
+  const statusEl = document.getElementById('quiz-save-status');
+ 
+  // Validate each question has text and at least 2 non-empty options
+  for (let i = 0; i < quizState.questions.length; i++) {
+    const q = quizState.questions[i];
+    if (!q.question.trim()) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: question text is required.`;
+      return;
+    }
+    const filled = q.options.filter(o => o.trim());
+    if (filled.length < 2) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: at least 2 options are required.`;
+      return;
+    }
+    // Ensure correct_index points at a non-empty option
+    if (!q.options[q.correct_index]?.trim()) {
+      statusEl.style.color = '#A32D2D';
+      statusEl.textContent = `Question ${i + 1}: the selected correct option is empty.`;
+      return;
+    }
+  }
+ 
+  if (statusEl) statusEl.textContent = 'Saving...';
+ 
+  const body = {
+    title:     quizState.title,
+    order:     0,
+    type:      'quiz',
+    questions: quizState.questions.map(q => ({
+      question:      q.question.trim(),
+      options:       q.options, // keep all 4 slots; backend accepts variable-length
+      correct_index: q.correct_index,
+    })),
+  };
+ 
+  const res = await fetch(
+    `/api/courses/${courseId}/chapters/${quizState.chapterId}/lessons/${quizState.lessonId}`,
+    { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) }
+  );
+ 
+  if (res.ok) {
+    statusEl.style.color = 'var(--teal-600)';
+    statusEl.textContent = 'Saved!';
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
+    loadCourse(); // refresh sidebar tree
+  } else {
+    statusEl.style.color = '#A32D2D';
+    statusEl.textContent = 'Save failed.';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  SIDEBAR RESIZER — drag to adjust content area
+// ══════════════════════════════════════════════════════════
+const resizer = document.getElementById('sidebar-resizer');
+const layout = document.getElementById('editor-layout');
+let isDragging = false;
+
+resizer.addEventListener('mousedown', function(e) {
+  isDragging = true;
+  document.body.classList.add('no-select');
+  resizer.classList.add('dragging');
+});
+
+document.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  // Limit sidebar's width between 200px and 600px
+  let newWidth = e.clientX;
+  if (newWidth < 200) newWidth = 200;
+  if (newWidth > 400) newWidth = 400;
+  
+  // Update the grid template to resize the sidebar
+  layout.style.setProperty('grid-template-columns', `${newWidth}px 4px 1fr`, 'important');
+});
+
+document.addEventListener('mouseup', function(e) {
+  if (isDragging) {
+    isDragging = false;
+    document.body.classList.remove('no-select');
+    resizer.classList.remove('dragging');
+  }
+});
 
 loadCourse();
 </script>

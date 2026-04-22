@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block title %}Course Learning - E-Learning CMS{% endblock %}
+
+{% block content %}
+<div class="learn-shell">
+  <div class="learn-topbar">
+    <a class="learn-back" href="/courses">Back to courses</a>
+    <span class="learn-view-badge">Student view</span>
+  </div>
+
+  <div id="learn-page">
+    <div class="loading">Loading course...</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.learn-shell {
+  display: grid;
+  gap: 20px;
+}
+
+.learn-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.learn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--purple-600);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.learn-back:hover {
+  text-decoration: underline;
+}
+
+.learn-view-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 0.5px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.learn-page {
+  display: grid;
+  gap: 20px;
+}
+
+.learn-hero {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border-radius: 20px;
+  border: 0.5px solid var(--border);
+  background:
+    radial-gradient(circle at top right, rgba(43, 184, 160, 0.18), transparent 32%),
+    linear-gradient(135deg, rgba(124, 92, 191, 0.10), rgba(255, 255, 255, 0.02)),
+    var(--bg);
+}
+
+.learn-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--teal-600);
+}
+
+.learn-title {
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.1;
+  margin: 8px 0 10px;
+}
+
+.learn-desc {
+  max-width: 780px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.learn-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.learn-stat {
+  padding: 16px;
+  border-radius: 16px;
+  border: 0.5px solid var(--border);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.learn-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.learn-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.learn-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.learn-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.learn-progress-bar {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+
+.learn-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal-600), var(--purple-600));
+  transition: width 0.35s ease;
+}
+
+.learn-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.learn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 0.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.learn-btn-primary {
+  border: none;
+  background: var(--purple-600);
+  color: #fff;
+}
+
+.learn-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.learn-chapter {
+  border-radius: 18px;
+  border: 0.5px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.learn-chapter-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.learn-chapter-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.learn-chapter-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.learn-chapter-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.learn-lessons {
+  display: grid;
+}
+
+.learn-lesson {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+  text-decoration: none;
+  color: inherit;
+  border-top: 0.5px solid var(--border);
+}
+
+.learn-lesson:first-child {
+  border-top: none;
+}
+
+.learn-lesson:hover {
+  background: rgba(124, 92, 191, 0.05);
+}
+
+.learn-lesson-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.learn-lesson-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.learn-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.learn-lesson.is-complete .learn-dot {
+  background: var(--teal-600);
+}
+
+.learn-type {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.learn-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.learn-lesson-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.learn-lesson-cta {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--purple-600);
+}
+
+.learn-empty {
+  padding: 28px;
+  border-radius: 18px;
+  border: 0.5px dashed var(--border);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .learn-hero {
+    padding: 22px 18px;
+  }
+
+  .learn-chapter-head,
+  .learn-lesson {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .learn-lesson {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+</style>
+
+<script>
+const courseId = "{{ course_id }}";
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function byOrder(items) {
+  return [...(items || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+function flattenLessons(course) {
+  return byOrder(course.chapters).flatMap((chapter) =>
+    byOrder(chapter.lessons).map((lesson) => ({ chapter, lesson }))
+  );
+}
+
+function lessonTypeLabel(type) {
+  return {
+    video: 'Video',
+    document: 'Document',
+    quiz: 'Quiz',
+  }[type] || 'Lesson';
+}
+
+function lessonUrl(lessonId) {
+  return `/lesson?course_id=${courseId}&lesson_id=${lessonId}`;
+}
+
+function findNextLesson(course, completedIds) {
+  const lessons = flattenLessons(course);
+  return lessons.find(({ lesson }) => !completedIds.has(lesson.lesson_id)) || lessons[0] || null;
+}
+
+function renderStudentCourse(course, progress) {
+  const page = document.getElementById('learn-page');
+  const completions = progress?.lesson_completions || [];
+  const completedIds = new Set(completions.map((item) => item.lesson_id));
+  const lessons = flattenLessons(course);
+  const totalLessons = lessons.length;
+  const completedCount = lessons.filter(({ lesson }) => completedIds.has(lesson.lesson_id)).length;
+  const pct = totalLessons
+    ? Math.round(progress?.overall_progress_pct ?? (completedCount / totalLessons) * 100)
+    : 0;
+  const nextLesson = findNextLesson(course, completedIds);
+  const chaptersHtml = byOrder(course.chapters).map((chapter, chapterIndex) => {
+    const lessonsHtml = byOrder(chapter.lessons).map((lesson) => {
+      const done = completedIds.has(lesson.lesson_id);
+      return `
+        <a class="learn-lesson ${done ? 'is-complete' : ''}" href="${lessonUrl(lesson.lesson_id)}">
+          <div class="learn-lesson-main">
+            <div class="learn-lesson-meta">
+              <span class="learn-dot"></span>
+              <span class="learn-type">${lessonTypeLabel(lesson.type)}</span>
+              <span class="learn-status">${done ? 'Completed' : 'Ready to start'}</span>
+            </div>
+            <h3 class="learn-lesson-title">${escapeHtml(lesson.title)}</h3>
+          </div>
+          <span class="learn-lesson-cta">${done ? 'Review lesson' : 'Open lesson'}</span>
+        </a>
+      `;
+    }).join('');
+
+    return `
+      <section class="learn-chapter">
+        <div class="learn-chapter-head">
+          <div>
+            <div class="learn-chapter-kicker">Chapter ${chapterIndex + 1}</div>
+            <h2 class="learn-chapter-title">${escapeHtml(chapter.title)}</h2>
+          </div>
+          <div class="learn-chapter-meta">${chapter.lessons.length} lesson${chapter.lessons.length === 1 ? '' : 's'}</div>
+        </div>
+        <div class="learn-lessons">
+          ${lessonsHtml || '<div class="learn-empty">No lessons in this chapter yet.</div>'}
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  page.className = 'learn-page';
+  page.innerHTML = `
+    <section class="learn-hero">
+      <div>
+        <div class="learn-eyebrow">Learning Dashboard</div>
+        <h1 class="learn-title">${escapeHtml(course.title)}</h1>
+        <p class="learn-desc">${escapeHtml(course.description || 'This course is ready when you are. Pick a lesson below to start learning.')}</p>
+      </div>
+
+      <div class="learn-progress">
+        <div class="learn-progress-row">
+          <span>Your progress</span>
+          <strong>${pct}%</strong>
+        </div>
+        <div class="learn-progress-bar">
+          <div class="learn-progress-fill" style="width:${pct}%"></div>
+        </div>
+      </div>
+
+      <div class="learn-summary">
+        <div class="learn-stat">
+          <div class="learn-stat-label">Completed lessons</div>
+          <div class="learn-stat-value">${completedCount}/${totalLessons}</div>
+        </div>
+        <div class="learn-stat">
+          <div class="learn-stat-label">Chapters</div>
+          <div class="learn-stat-value">${course.chapters.length}</div>
+        </div>
+        <div class="learn-stat">
+          <div class="learn-stat-label">Next step</div>
+          <div class="learn-stat-value" style="font-size:18px">${escapeHtml(nextLesson?.lesson.title || 'Explore the course')}</div>
+        </div>
+      </div>
+
+      <div class="learn-actions">
+        ${nextLesson ? `<a class="learn-btn learn-btn-primary" href="${lessonUrl(nextLesson.lesson.lesson_id)}">${completedCount === totalLessons ? 'Review course' : 'Continue learning'}</a>` : ''}
+        <a class="learn-btn" href="/courses">Back to library</a>
+      </div>
+    </section>
+
+    <div class="learn-grid">
+      ${chaptersHtml || '<div class="learn-empty">This course does not have any lessons yet.</div>'}
+    </div>
+  `;
+}
+
+async function loadStudentCourse() {
+  const role = getCurrentUserRole();
+  const studentId = getCurrentUserId();
+
+  if (!courseId) {
+    window.location.replace('/courses');
+    return;
+  }
+
+  if (role === 'instructor') {
+    window.location.replace(getInstructorCourseUrl(courseId));
+    return;
+  }
+
+  if (role !== 'student' || !studentId) {
+    window.location.replace('/courses');
+    return;
+  }
+
+  try {
+    const [courseRes, progressRes] = await Promise.all([
+      fetch(`/api/courses/${courseId}`, { headers: authHeaders() }),
+      fetch(`/api/progress/${studentId}/${courseId}`, { headers: authHeaders() }),
+    ]);
+
+    if (!courseRes.ok) throw new Error('Failed to load course');
+
+    const course = await courseRes.json();
+    const progress = progressRes.ok
+      ? await progressRes.json()
+      : { lesson_completions: [], overall_progress_pct: 0 };
+
+    renderStudentCourse(course, progress);
+  } catch (err) {
+    document.getElementById('learn-page').innerHTML = `<p class="error-state">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+loadStudentCourse();
+</script>
+{% endblock %}

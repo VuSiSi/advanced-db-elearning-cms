@@ -78,6 +78,7 @@
 // ── Constants & state ──────────────────────────────────────
 const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
 const courseId = "{{ course_id }}";
+const editorRole = getCurrentUserRole();
 
 let currentCourse          = null; // cached full course object from last API fetch
 let pendingLessonChapterId = null; // chapterId of a lesson in setup panel (not yet in DB)
@@ -867,6 +868,12 @@ document.addEventListener('mouseup', function(e) {
   }
 });
 
-loadCourse();
+if (editorRole === 'student') {
+  window.location.replace(getStudentCourseUrl(courseId));
+} else if (editorRole !== 'instructor') {
+  window.location.replace('/courses');
+} else {
+  loadCourse();
+}
 </script>
 {% endblock %}

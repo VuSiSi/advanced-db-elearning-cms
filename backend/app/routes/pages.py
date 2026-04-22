@@ -34,6 +34,15 @@ async def new_course_redirect(request: Request):
     return RedirectResponse(url="/courses")
 
 
+@router.get("/courses/{course_id}/learn", include_in_schema=False)
+async def course_learn_page(course_id: str, request: Request):
+    """Student-facing course learning page."""
+    return templates.TemplateResponse(
+        "course_learn.html",
+        {"request": request, "course_id": course_id},
+    )
+
+
 @router.get("/courses/{course_id}", include_in_schema=False)
 async def course_detail_page(course_id: str, request: Request):
     """

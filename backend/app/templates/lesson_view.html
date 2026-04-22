@@ -1,162 +1,393 @@
 {% extends "base.html" %}
-{% block title %}Lesson — E-Learning CMS{% endblock %}
+{% block title %}Lesson - E-Learning CMS{% endblock %}
 
 {% block content %}
-<div id="lesson-container">
-  <div class="loading">Loading lesson...</div>
+<div class="lesson-shell">
+  <div class="lesson-topbar">
+    <a class="lesson-back" id="lesson-back-link" href="/courses">Back to course</a>
+    <span class="lesson-view-badge">Student lesson</span>
+  </div>
+
+  <div id="lesson-progress-slot"></div>
+
+  <div id="lesson-container">
+    <div class="loading">Loading lesson...</div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+.lesson-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.lesson-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lesson-back {
+  color: var(--purple-600);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.lesson-back:hover {
+  text-decoration: underline;
+}
+
+.lesson-view-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lesson-progress-card,
+.lesson-card {
+  border-radius: 18px;
+  border: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+.lesson-progress-card {
+  padding: 16px 18px;
+}
+
+.lesson-card {
+  padding: 24px;
+}
+
+.lesson-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.lesson-title {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.15;
+}
+
+.lesson-type {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(124, 92, 191, 0.10);
+  color: var(--purple-600);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lesson-content {
+  line-height: 1.8;
+}
+
+.lesson-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.lesson-muted {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.lesson-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.lesson-progress-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+
+.lesson-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal-600), var(--purple-600));
+  transition: width 0.35s ease;
+}
+
+.lesson-quiz-question {
+  margin-bottom: 20px;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+
+.lesson-quiz-question p {
+  margin-top: 0;
+}
+
+.lesson-quiz-option {
+  display: block;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .lesson-card {
+    padding: 20px 16px;
+  }
+}
+</style>
+
 <script>
-// Read course_id and lesson_id from URL params
-const params   = new URLSearchParams(window.location.search);
+const params = new URLSearchParams(window.location.search);
 const courseId = params.get('course_id');
 const lessonId = params.get('lesson_id');
+let activeQuizQuestions = [];
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function lessonTypeLabel(type) {
+  return {
+    video: 'Video',
+    document: 'Document',
+    quiz: 'Quiz',
+  }[type] || 'Lesson';
+}
+
+function renderLessonCard(lesson, bodyHtml, actionsHtml = '') {
+  const container = document.getElementById('lesson-container');
+  container.innerHTML = `
+    <div class="lesson-card">
+      <div class="lesson-header">
+        <div>
+          <h1 class="lesson-title">${escapeHtml(lesson.title)}</h1>
+        </div>
+        <span class="lesson-type">${lessonTypeLabel(lesson.type)}</span>
+      </div>
+      <div class="lesson-content">${bodyHtml}</div>
+      ${actionsHtml ? `<div class="lesson-actions">${actionsHtml}</div>` : ''}
+    </div>
+  `;
+}
 
 async function loadLesson() {
-  const container = document.getElementById('lesson-container');
-  try {
-    const res    = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
-    const course = await res.json();
+  const role = getCurrentUserRole();
 
-    // Find the lesson inside nested chapters
+  if (!courseId || !lessonId) {
+    window.location.replace('/courses');
+    return;
+  }
+
+  if (role === 'instructor') {
+    window.location.replace(getInstructorCourseUrl(courseId));
+    return;
+  }
+
+  if (role !== 'student') {
+    window.location.replace('/courses');
+    return;
+  }
+
+  document.getElementById('lesson-back-link').href = getStudentCourseUrl(courseId);
+
+  try {
+    const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load lesson');
+
+    const course = await res.json();
     let lesson = null;
-    for (const ch of course.chapters) {
-      lesson = ch.lessons.find(l => l.lesson_id === lessonId);
+    for (const chapter of course.chapters || []) {
+      lesson = (chapter.lessons || []).find((item) => item.lesson_id === lessonId);
       if (lesson) break;
     }
-    if (!lesson) { container.innerHTML = '<p class="error-state">Lesson not found.</p>'; return; }
 
-    // Render based on type
+    if (!lesson) {
+      document.getElementById('lesson-container').innerHTML = '<p class="error-state">Lesson not found.</p>';
+      return;
+    }
+
     if (lesson.type === 'video') {
-      container.innerHTML = `
-        <h2>${lesson.title}</h2>
-        <video controls style="width:100%;border-radius:8px;margin:16px 0">
-          <source src="${lesson.video_url}" />
-        </video>
-        <button class="btn btn-primary" onclick="markComplete()">Mark as complete</button>`;
+      renderLessonCard(
+        lesson,
+        `
+          <video controls style="width:100%;border-radius:14px;margin:8px 0 0">
+            <source src="${escapeHtml(lesson.video_url || '')}" />
+          </video>
+        `,
+        `
+          <button class="btn btn-primary" onclick="markComplete()">Mark as complete</button>
+          <span class="lesson-muted">Finish watching, then save your progress.</span>
+        `
+      );
+      return;
+    }
 
-    } else if (lesson.type === 'document') {
-      container.innerHTML = `
-        <h2>${lesson.title}</h2>
-        <div class="doc-content" style="line-height:1.8;max-width:720px">
-          ${lesson.content}
-        </div>
-        <button class="btn btn-primary" onclick="markComplete()" style="margin-top:24px">
-          Mark as complete
-        </button>`;
+    if (lesson.type === 'document') {
+      renderLessonCard(
+        lesson,
+        `<div class="doc-content">${lesson.content || ''}</div>`,
+        `
+          <button class="btn btn-primary" onclick="markComplete()">Mark as complete</button>
+          <span class="lesson-muted">Use this after you finish reading the lesson.</span>
+        `
+      );
+      return;
+    }
 
-    } else if (lesson.type === 'quiz') {
-      // Build quiz form — static HTML, submit handled in JS
-      const questions = lesson.questions || [];
-      const qHtml = questions.map((q, i) => `
-        <div style="margin-bottom:20px">
-          <p><strong>Q${i+1}. ${q.question}</strong></p>
-          ${q.options.map((opt, j) => `
-            <label style="display:block;margin:4px 0;cursor:pointer">
-              <input type="radio" name="q${i}" value="${j}" /> ${opt}
-            </label>`).join('')}
-        </div>`).join('');
+    activeQuizQuestions = lesson.questions || [];
+    const questionsHtml = activeQuizQuestions.map((question, questionIndex) => `
+      <div class="lesson-quiz-question">
+        <p><strong>Q${questionIndex + 1}. ${escapeHtml(question.question)}</strong></p>
+        ${(question.options || []).map((option, optionIndex) => `
+          <label class="lesson-quiz-option">
+            <input type="radio" name="q${questionIndex}" value="${optionIndex}" />
+            ${escapeHtml(option)}
+          </label>
+        `).join('')}
+      </div>
+    `).join('');
 
-      container.innerHTML = `
-        <h2>${lesson.title}</h2>
-        <div id="quiz-form">${qHtml}</div>
-        <button class="btn btn-primary" onclick="submitQuiz(${JSON.stringify(questions)})">
+    renderLessonCard(
+      lesson,
+      `<div id="quiz-form">${questionsHtml}</div><div id="quiz-result" style="margin-top:16px"></div>`,
+      `
+        <button class="btn btn-primary" id="quiz-submit-btn" onclick="submitQuiz()" ${activeQuizQuestions.length ? '' : 'disabled'}>
           Submit quiz
         </button>
-        <div id="quiz-result" style="margin-top:16px"></div>`;
-    }
+        <span class="lesson-muted">${activeQuizQuestions.length ? 'Your score is saved when you submit.' : 'This quiz does not have any questions yet.'}</span>
+      `
+    );
   } catch (err) {
-    container.innerHTML = `<p class="error-state">${err.message}</p>`;
+    document.getElementById('lesson-container').innerHTML = `<p class="error-state">${escapeHtml(err.message)}</p>`;
   }
 }
 
 async function markComplete() {
-  const token   = localStorage.getItem('token');
-  const payload = JSON.parse(atob(token.split('.')[1]));
-  await fetch(`/api/progress/complete?student_id=${payload.sub}&course_id=${courseId}&lesson_id=${lessonId}`, {
-    method: 'POST', headers: authHeaders()
-  });
+  const studentId = getCurrentUserId();
+  if (!studentId) return;
+
+  const res = await fetch(
+    `/api/progress/complete?student_id=${studentId}&course_id=${courseId}&lesson_id=${lessonId}`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+    }
+  );
+
+  if (!res.ok) {
+    alert('Failed to save progress. Please try again.');
+    return;
+  }
+
+  await loadProgressBar(courseId);
   alert('Lesson marked as complete!');
 }
 
-function submitQuiz(questions) {
+function submitQuiz() {
+  if (!activeQuizQuestions.length) {
+    document.getElementById('quiz-result').innerHTML = `
+      <div class="alert alert-error">This quiz does not have any questions yet.</div>
+    `;
+    return;
+  }
+
   let correct = 0;
-  const results = questions.map((q, i) => {
-    const selected = document.querySelector(`input[name="q${i}"]:checked`);
-    const isCorrect = selected && parseInt(selected.value) === q.correct_index;
+  const results = activeQuizQuestions.map((question, questionIndex) => {
+    const selected = document.querySelector(`input[name="q${questionIndex}"]:checked`);
+    const isCorrect = selected && parseInt(selected.value, 10) === question.correct_index;
     if (isCorrect) correct++;
-    return { question: q.question, isCorrect };
+    return { question: question.question, isCorrect };
   });
 
-  const score = Math.round((correct / questions.length) * 100);
-
-  // Show per-question result
-  const resultHtml = results.map(r => `
-    <p style="color: ${r.isCorrect ? 'var(--teal-600)' : '#A32D2D'}">
-      ${r.isCorrect ? '✓' : '✗'} ${r.question}
-    </p>`).join('');
+  const total = activeQuizQuestions.length || 1;
+  const score = Math.round((correct / total) * 100);
+  const resultHtml = results.map((item) => `
+    <p style="color:${item.isCorrect ? 'var(--teal-600)' : '#A32D2D'}">
+      ${item.isCorrect ? 'Correct' : 'Incorrect'}: ${escapeHtml(item.question)}
+    </p>
+  `).join('');
 
   document.getElementById('quiz-result').innerHTML = `
     <div class="alert ${score >= 60 ? 'alert-success' : 'alert-error'}">
-      Score: ${score}% (${correct}/${questions.length})
+      Score: ${score}% (${correct}/${activeQuizQuestions.length})
     </div>
-    ${resultHtml}`;
+    ${resultHtml}
+  `;
 
-  // Disable submit after submission
-  document.querySelector('button[onclick^="submitQuiz"]').disabled = true;
-
-  // Auto mark complete with score
+  document.getElementById('quiz-submit-btn').disabled = true;
   markCompleteWithScore(score);
 }
 
 async function markCompleteWithScore(score) {
-  const token   = localStorage.getItem('token');
-  if (!token) return;
-  const payload = JSON.parse(atob(token.split('.')[1]));
+  const studentId = getCurrentUserId();
+  if (!studentId) return;
+
   try {
-    await fetch(`/api/progress/complete?student_id=${payload.sub}&course_id=${courseId}&lesson_id=${lessonId}`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ score })
-    });
+    const res = await fetch(
+      `/api/progress/complete?student_id=${studentId}&course_id=${courseId}&lesson_id=${lessonId}&score=${encodeURIComponent(score)}`,
+      {
+        method: 'POST',
+        headers: authHeaders(),
+      }
+    );
+
+    if (!res.ok) throw new Error('Failed to save quiz progress');
+    await loadProgressBar(courseId);
   } catch (err) {
-     console.error('Error marking quiz complete:', err);
+    console.error('Error marking quiz complete:', err);
   }
 }
 
-
-async function loadProgressBar(courseId) {
-  const token   = localStorage.getItem('token');
-  if (!token) return;
-  const payload = JSON.parse(atob(token.split('.')[1]));
-  if (payload.role !== 'student') return;
+async function loadProgressBar(currentCourseId) {
+  const studentId = getCurrentUserId();
+  if (!studentId || getCurrentUserRole() !== 'student') return;
 
   const res = await fetch(
-    `/api/progress/${payload.sub}/${courseId}`,
+    `/api/progress/${studentId}/${currentCourseId}`,
     { headers: authHeaders() }
   );
   if (!res.ok) return;
-  const data = await res.json();
-  const pct  = Math.round(data.overall_progress_pct || 0);
 
-  // Inject progress bar into DOM
-  const bar = document.createElement('div');
-  bar.innerHTML = `
-    <div style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;
-                  font-size:12px;color:var(--text-secondary);margin-bottom:4px">
-        <span>Course progress</span><span>${pct}%</span>
+  const data = await res.json();
+  const pct = Math.round(data.overall_progress_pct || 0);
+  document.getElementById('lesson-progress-slot').innerHTML = `
+    <div class="lesson-progress-card">
+      <div class="lesson-progress-row">
+        <span>Course progress</span>
+        <strong>${pct}%</strong>
       </div>
-      <div style="height:6px;background:var(--bg-tertiary);border-radius:3px">
-        <div style="height:100%;width:${pct}%;
-                    background:var(--teal-600);border-radius:3px;
-                    transition:width 0.4s ease">
-        </div>
+      <div class="lesson-progress-bar">
+        <div class="lesson-progress-fill" style="width:${pct}%"></div>
       </div>
-    </div>`;
-  document.getElementById('lesson-container').prepend(bar);
+    </div>
+  `;
 }
 
 loadLesson();

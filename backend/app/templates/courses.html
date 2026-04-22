@@ -6,8 +6,8 @@
 <!-- ── Page header ───────────────────────────────────────── -->
 <div class="co-page-header">
   <div>
-    <h1 class="co-page-title">Course Overview</h1>
-    <p class="co-page-sub">Browse and continue your learning journey</p>
+    <h1 class="co-page-title" id="course-page-title">Course Overview</h1>
+    <p class="co-page-sub" id="course-page-sub">Browse and continue your learning journey</p>
   </div>
   <!-- onclick now opens a modal instead of navigating to /courses/new -->
   <button class="co-btn-new" id="btn-create-course" style="display:none"
@@ -18,7 +18,7 @@
 
 <!-- ── Filters bar ───────────────────────────────────────── -->
 <div class="co-filters">
-  <div class="co-filter-group">
+  <div class="co-filter-group" id="filter-type-group">
     <select class="co-select" id="filter-type" onchange="applyFilters()">
       <option value="all">All</option>
       <option value="mine">My Courses</option>
@@ -80,8 +80,8 @@
     <circle cx="40" cy="42" r="6" stroke="currentColor" stroke-width="2"/>
     <path d="M40 48v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
   </svg>
-  <p class="co-empty-title">No courses found</p>
-  <p class="co-empty-sub">Try adjusting your search or filters</p>
+  <p class="co-empty-title" id="co-empty-title">No courses found</p>
+  <p class="co-empty-sub" id="co-empty-sub">Try adjusting your search or filters</p>
 </div>
 
 <!-- ── Create Course Modal ───────────────────────────────── -->
@@ -395,8 +395,22 @@ input.co-search {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
 .co-card-instructor { font-size: 11px; color: var(--text-muted); }
+.co-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--purple-600);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 /* LIST VIEW overrides */
 .list-view .co-card { display: grid; grid-template-columns: 180px 1fr; }
@@ -483,21 +497,33 @@ function geomPattern(seed) {
 }
 
 // Lesson counter removed from card footer (always showed 0 — misleading)
+const currentUser = getTokenPayload();
+const currentRole = currentUser?.role || '';
+const currentUserId = currentUser?.sub || '';
+
+function openCourse(courseId, view = 'default') {
+  if (view === 'student') {
+    window.location.href = getStudentCourseUrl(courseId);
+    return;
+  }
+
+  if (view === 'instructor') {
+    window.location.href = getInstructorCourseUrl(courseId);
+    return;
+  }
+
+  window.location.href = getDefaultCourseUrl(courseId);
+}
+
 function renderCard(course, index) {
   const grad    = GRADIENTS[index % GRADIENTS.length];
   const pattern = geomPattern(index + 1);
-
-  return `
-    <div class="co-card" onclick="window.location.href='/courses/${course.id}'">
-      <div class="co-card-banner">
-        <div class="co-card-banner-bg" style="
-          background: linear-gradient(135deg, ${grad[0]} 0%, ${grad[1]} 50%, ${grad[2]} 100%);
-        "></div>
-        <svg class="co-card-banner-svg" viewBox="0 0 320 140"
-             xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-          <g transform="scale(2.5)">${pattern}</g>
-        </svg>
-        <span class="co-card-badge">E-Learning</span>
+  const badge   = currentRole === 'instructor' ? 'Teaching' : 'Learning';
+  const action  = currentRole === 'instructor' ? 'Manage course' : 'Open course';
+  const summary = currentRole === 'instructor'
+    ? (course.instructor_id === currentUserId ? 'Owned by you' : 'Shared instructor catalog')
+    : 'Student workspace';
+  const menu = currentRole === 'instructor' ? `
         <button class="co-card-menu"
                 onclick="event.stopPropagation(); cardMenu(event, '${course.id}')"
                 title="Options">
@@ -506,15 +532,27 @@ function renderCard(course, index) {
             <circle cx="8" cy="8" r="1.5"/>
             <circle cx="8" cy="13" r="1.5"/>
           </svg>
-        </button>
+        </button>` : '';
+
+  return `
+    <div class="co-card" onclick="openCourse('${course.id}')">
+      <div class="co-card-banner">
+        <div class="co-card-banner-bg" style="
+          background: linear-gradient(135deg, ${grad[0]} 0%, ${grad[1]} 50%, ${grad[2]} 100%);
+        "></div>
+        <svg class="co-card-banner-svg" viewBox="0 0 320 140"
+             xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+          <g transform="scale(2.5)">${pattern}</g>
+        </svg>
+        <span class="co-card-badge">${badge}</span>
+        ${menu}
       </div>
       <div class="co-card-body">
         <div class="co-card-title">${course.title}</div>
         <div class="co-card-desc">${course.description || 'No description provided.'}</div>
         <div class="co-card-footer">
-          <span class="co-card-instructor">
-            ${course.instructor_id ? '👤 Instructor' : ''}
-          </span>
+          <span class="co-card-instructor">${summary}</span>
+          <span class="co-card-action">${action}</span>
         </div>
       </div>
     </div>
@@ -530,7 +568,8 @@ async function loadCourses() {
   const grid = document.getElementById('course-grid');
   grid.innerHTML = `<div class="co-loading"><div class="co-spinner"></div><span>Loading courses...</span></div>`;
   try {
-    const res  = await fetch('/api/courses/');
+    const res  = await fetch('/api/courses/', { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load courses');
     allCourses = await res.json();
     applyFilters();
   } catch (err) {
@@ -540,6 +579,7 @@ async function loadCourses() {
 
 // ── Filter + sort + render ─────────────────────────────────
 function applyFilters() {
+  const filterType = document.getElementById('filter-type')?.value || 'all';
   const query  = document.getElementById('search-input').value.toLowerCase().trim();
   const sortBy = document.getElementById('sort-by').value;
   const grid   = document.getElementById('course-grid');
@@ -550,6 +590,10 @@ function applyFilters() {
     c.title.toLowerCase().includes(query) ||
     (c.description || '').toLowerCase().includes(query)
   );
+
+  if (currentRole === 'instructor' && filterType === 'mine') {
+    filtered = filtered.filter(c => c.instructor_id === currentUserId);
+  }
 
   if (sortBy === 'az') filtered.sort((a, b) => a.title.localeCompare(b.title));
   if (sortBy === 'za') filtered.sort((a, b) => b.title.localeCompare(a.title));
@@ -584,7 +628,11 @@ function setView(view) {
 
 // ── Card context menu ──────────────────────────────────────
 function cardMenu(event, courseId) {
+  if (currentRole !== 'instructor') return;
+
+  document.querySelectorAll('.co-card-context-menu').forEach(menu => menu.remove());
   const menu = document.createElement('div');
+  menu.className = 'co-card-context-menu';
   menu.style.cssText = `
     position:fixed; top:${event.clientY}px; left:${event.clientX}px;
     background:var(--bg); border:0.5px solid var(--border);
@@ -592,11 +640,17 @@ function cardMenu(event, courseId) {
     box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:140px;
   `;
   menu.innerHTML = `
-    <div onclick="window.location.href='/courses/${courseId}'"
+    <div onclick="openCourse('${courseId}', 'instructor')"
          style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
          onmouseover="this.style.background='var(--bg-secondary)'"
          onmouseout="this.style.background=''">
       Edit course
+    </div>
+    <div onclick="openCourse('${courseId}', 'student')"
+         style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
+         onmouseover="this.style.background='var(--bg-secondary)'"
+         onmouseout="this.style.background=''">
+      Student view
     </div>
     <div onclick="window.location.href='/analytics?course_id=${courseId}'"
          style="padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px"
@@ -617,6 +671,7 @@ function cardMenu(event, courseId) {
 
 // ── Create course modal ────────────────────────────────────
 function openCreateModal() {
+  if (currentRole !== 'instructor') return;
   const overlay = document.getElementById('create-modal-overlay');
   overlay.style.display = 'flex';
   // Reset form state
@@ -632,6 +687,7 @@ function closeCreateModal() {
 }
 
 async function submitCreateCourse() {
+  if (currentRole !== 'instructor') return;
   const title       = document.getElementById('create-modal-title').value.trim();
   const description = document.getElementById('create-modal-desc').value.trim();
   const errBox      = document.getElementById('create-modal-error');
@@ -660,6 +716,33 @@ async function submitCreateCourse() {
   }
 }
 
+function initializeCoursePage() {
+  const titleEl = document.getElementById('course-page-title');
+  const subEl = document.getElementById('course-page-sub');
+  const emptyTitleEl = document.getElementById('co-empty-title');
+  const emptySubEl = document.getElementById('co-empty-sub');
+  const createBtn = document.getElementById('btn-create-course');
+  const filterGroup = document.getElementById('filter-type-group');
+
+  if (currentRole === 'instructor') {
+    titleEl.textContent = 'Instructor Workspace';
+    subEl.textContent = 'Create, manage, and review the courses you teach.';
+    emptyTitleEl.textContent = 'No courses match this view';
+    emptySubEl.textContent = 'Try another search, or create a new course to get started.';
+    createBtn.style.display = 'inline-flex';
+    filterGroup.style.display = '';
+    return;
+  }
+
+  titleEl.textContent = 'Learning Hub';
+  subEl.textContent = 'Choose a course, continue lessons, and track your progress.';
+  emptyTitleEl.textContent = 'No courses found';
+  emptySubEl.textContent = 'Try a different keyword and pick another course to keep learning.';
+  createBtn.style.display = 'none';
+  filterGroup.style.display = 'none';
+  document.getElementById('filter-type').value = 'all';
+}
+
 // Close modal when clicking the backdrop
 document.getElementById('create-modal-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeCreateModal();
@@ -670,21 +753,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeCreateModal();
 });
 
-// ── Show "New Course" button for instructors only ──────────
-const _token = localStorage.getItem('token');
-if (_token) {
-  try {
-    const payload = JSON.parse(atob(_token.split('.')[1]));
-    if (payload.role === 'instructor') {
-      document.getElementById('btn-create-course').style.display = 'inline-flex';
-    }
-  } catch {}
-}
-
 // ── Delete Course Logic ────────────────────────────────────
 let courseToDeleteID = null;
 
 async function deleteCourse(courseId) {
+  if (currentRole !== 'instructor') return;
   courseToDeleteID = courseId;
   const course = allCourses.find(c => c.id === courseId);
   const title = course ? course.title : 'this course';
@@ -713,8 +786,7 @@ function closeDeleteModal() {
 
 // Call API to delete course, then refresh list
 async function submitDeleteCourse() {
-  if (!courseToDeleteID) return;
-
+  if (currentRole !== 'instructor' || !courseToDeleteID) return;
   const btn = document.getElementById('confirm-delete-btn');
   const originalText = btn.textContent;
   btn.textContent = 'Deleting...';
@@ -725,7 +797,7 @@ async function submitDeleteCourse() {
       method: 'DELETE',
       headers: authHeaders(),
     });
-    if (!res.ok || res.status === 204) {
+    if (res.ok || res.status === 204) {
       closeDeleteModal();
       await loadCourses(); // Refresh list after deletion
     } else {
@@ -745,6 +817,7 @@ document.getElementById('delete-modal-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDeleteModal();
 });
 
+initializeCoursePage();
 loadCourses();
 </script>
 {% endblock %}

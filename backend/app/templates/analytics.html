@@ -17,6 +17,11 @@ const params   = new URLSearchParams(window.location.search);
 const courseId = params.get('course_id');
 
 async function loadStats() {
+  if (getCurrentUserRole() !== 'instructor') {
+    window.location.replace(courseId ? getDefaultCourseUrl(courseId) : '/courses');
+    return;
+  }
+
   const container = document.getElementById('stats-container');
   try {
     const res  = await fetch(`/api/stats/course/${courseId}`, { headers: authHeaders() });

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import connect_db, close_db, get_db
-from app.routes import auth, courses, pages
+from app.routes import auth, courses, pages, upload
 from app.routes.progress import router as progress_router
 from app.routes.stats import router as stats_router
 
@@ -48,7 +48,8 @@ app.include_router(auth.router)
 app.include_router(courses.router)
 app.include_router(progress_router)
 app.include_router(stats_router)
-app.include_router(pages.router)   # pages last (catch-all HTML routes)
+app.include_router(upload.router)  
+app.include_router(pages.router)        # pages last (catch-all HTML routes)
 
 
 # ── Optional: request timing middleware ───────────────────

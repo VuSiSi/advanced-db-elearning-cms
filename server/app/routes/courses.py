@@ -249,8 +249,7 @@ async def update_lesson(
     # Build the $set payload for the specific nested lesson
     update_fields = {
         f"chapters.$[chap].lessons.$[les].{k}": v
-        for k, v in lesson_in.model_dump().items()
-        if v is not None
+        for k, v in lesson_in.model_dump(exclude_unset=True).items()
     }
     update_fields["updated_at"] = datetime.utcnow()
 

@@ -28,7 +28,7 @@
     <!-- Course actions footer -->
     <div class="sidebar-footer">
       <button class="btn btn-ghost btn-sm" id="btn-edit-course-meta" title="Edit course title/description">
-        ✏ Edit Info
+        ✏ Edit Course Info
       </button>
       <a class="btn btn-ghost btn-sm" href="/analytics/{{ course.id if course else '' }}" target="_blank">
         📊 Analytics
@@ -523,8 +523,10 @@ function renderLessonPanel(meta, chapterId) {
         <input type="text" id="f-title" value="${esc(meta.title)}" />
       </div>
       <div class="form-group">
-        <label for="f-video-url">Video URL</label>
+        <label for="f-video-url">Video URL or Upload Video File (Do not accept audio-only files)</label>
         <input type="url" id="f-video-url" value="${esc(meta.video_url||'')}" placeholder="https://youtube.com/watch?v=..." />
+        
+        <input type="file" id="f-video-upload" accept="video/mp4, video/x-m4v, video/*" style="margin-top: 10px; padding: 6px;" onchange="validateVideoUpload(this)" />
       </div>
       <div class="form-group">
         <label for="f-duration">Duration (seconds)</label>
@@ -547,8 +549,10 @@ function renderLessonPanel(meta, chapterId) {
         <input type="text" id="f-title" value="${esc(meta.title)}" />
       </div>
       <div class="form-group">
-        <label for="f-content">Content (Markdown supported)</label>
+        <label for="f-content">Content (Markdown supported) or Upload File (.pdf, .txt)</label>
         <textarea id="f-content" rows="14" style="font-family:var(--font-mono);font-size:13px;">${esc(meta.content||'')}</textarea>
+        
+        <input type="file" id="f-doc-upload" accept=".pdf, .txt, .doc, .docx, application/pdf, text/plain" style="margin-top: 10px; padding: 6px;" />
       </div>`;
 
   } else if (meta.type === 'quiz') {
@@ -593,6 +597,22 @@ function renderLessonPanel(meta, chapterId) {
   panel.querySelectorAll('input,textarea,select').forEach(el => {
     el.addEventListener('input', () => setDirty(true));
   });
+}
+
+// Validate video upload input
+function validateVideoUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+
+  if (file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.mp3')) {
+    alert('Invalid file type. Please upload a video file, not audio.');
+    input.value = '';
+    return;
+  }
+  
+  // Optional: further validate video formats if needed
+  setDirty(true);
 }
 
 function renderQuestionEditor(q, qi) {
@@ -710,16 +730,39 @@ async function saveLesson() {
   const title = document.getElementById('f-title')?.value || '';
   let payload = { title, type, order: 0 };
 
-  if (type === 'video') {
-    payload.video_url       = document.getElementById('f-video-url')?.value || null;
-    payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
-  } else if (type === 'document') {
-    payload.content = document.getElementById('f-content')?.value || '';
-  } else if (type === 'quiz') {
-    payload.questions = collectQuizQuestions();
-  }
-
   try {
+    if (type === 'video') {
+      const videoFileInput = document.getElementById('f-video-upload');
+      let finalVideoUrl = document.getElementById('f-video-url')?.value || null;
+
+      // Prioritize video file upload if a new file is selected
+      if (videoFileInput && videoFileInput.files.length > 0) {
+        btn.textContent = 'Uploading Video...';
+        finalVideoUrl = await uploadFileToServer(videoFileInput.files[0]);
+      }
+
+      payload.video_url = finalVideoUrl;
+      payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
+
+    } else if (type === 'document') {
+      const docFileInput = document.getElementById('f-doc-upload');
+      let finalContent = document.getElementById('f-content')?.value || '';
+
+      // Prioritize document file upload if a new file is selected
+      if (docFileInput && docFileInput.files.length > 0) {
+        btn.textContent = 'Uploading Document...';
+        const docUrl = await uploadFileToServer(docFileInput.files[0]);
+        // Prepend a markdown link to the uploaded document at the top of the content
+        finalContent = `[Nhấn vào đây để xem/tải tài liệu đính kèm](${docUrl})\n\n` + finalContent;
+      }
+
+      payload.content = finalContent;
+
+    } else if (type === 'quiz') {
+      payload.questions = collectQuizQuestions();
+    }
+
+    btn.textContent = 'Saving Metadata...';
     const res = await fetch(
       `/api/courses/${COURSE_ID}/chapters/${chapterId}/lessons/${lessonId}`,
       { method: 'PUT', headers: authHeaders(), body: JSON.stringify(payload) }
@@ -730,7 +773,6 @@ async function saveLesson() {
     toast('success', 'Saved', 'Lesson saved successfully.');
     setDirty(false);
 
-    // Update local cache title
     const ch = (courseData?.chapters||[]).find(c=>c.chapter_id===chapterId);
     const ls = ch?.lessons?.find(l=>l.lesson_id===lessonId);
     if (ls) { ls.title = title; ls.type = type; }
@@ -742,6 +784,32 @@ async function saveLesson() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '💾 Save'; }
   }
+}
+
+// ════════════════════════════════════════════
+//  UPLOAD FILE
+// ════════════════════════════════════════════
+async function uploadFileToServer(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = localStorage.getItem('token');
+  
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    headers: {
+      ...(token ? {'Authorization': `Bearer ${token}`} : {}),
+    },
+    body: formData
+  });
+
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.detail || "Không thể upload file");
+  }
+
+  const data = await res.json();
+  return data.file_url;
 }
 
 function previewLesson(lessonId) {
@@ -996,6 +1064,8 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <style>
+.editor-sidebar {position: sticky; top: var(--navbar-h, 64px); height: calc(100vh - var(--navbar-h, 64px)); z-index: 100;}
+.sidebar-footer {padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: white; margin-top: auto; position: sticky; bottom: 0; z-index: 10; }
 /* ── Editor-specific extra styles ── */
 .sidebar-title-wrap { flex: 1; min-width: 0; }
 .sidebar-subtitle { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }

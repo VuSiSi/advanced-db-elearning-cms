@@ -1,36 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.models import ProgressCreate, LessonCompletion
-from app.middleware.auth import get_current_user, require_student, TokenData
+from app.middleware.auth import get_current_user, TokenData
 from app.database import get_db
 from bson import ObjectId
 from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
-
-
-# ─────────────────────────────────────────────────────────────
-# POST /api/progress/complete  — Student marks lesson complete
-# ─────────────────────────────────────────────────────────────
-class LessonCompleteRequest:
-    def __init__(self, course_id: str, lesson_id: str):
-        self.course_id = course_id
-        self.lesson_id = lesson_id
-
-
-from pydantic import BaseModel
 
 
 class LessonCompleteBody(BaseModel):
     course_id: str
     lesson_id: str
+    score: Optional[float] = None  # None for video/doc, float for quiz
 
 
+# ─────────────────────────────────────────────────────────────
+# POST /api/progress/complete  — Student marks lesson complete
+# ─────────────────────────────────────────────────────────────
 @router.post("/complete")
 async def mark_lesson_complete(
     body: LessonCompleteBody,
     token_data: TokenData = Depends(get_current_user),
 ):
-    """Mark a lesson as complete for the current student."""
+    """Mark a lesson as complete. Only students can call this."""
+    if token_data.role != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+
     db = get_db()
     student_id = token_data.user_id
 
@@ -67,24 +64,48 @@ async def mark_lesson_complete(
             for lc in progress_doc.get("lesson_completions", [])
         )
         if already:
+            # If score is being updated (re-submit quiz), allow update
+            if body.score is not None:
+                await db.student_progress.update_one(
+                    {
+                        "_id": progress_doc["_id"],
+                        "lesson_completions.lesson_id": body.lesson_id,
+                    },
+                    {
+                        "$set": {
+                            "lesson_completions.$.score": body.score,
+                            "lesson_completions.$.completed_at": datetime.utcnow(),
+                            "last_updated": datetime.utcnow(),
+                        }
+                    },
+                )
+                return {"message": "Score updated", "already_done": True}
             return {"message": "Lesson already completed", "already_done": True}
 
         # Push new completion
-        completion = LessonCompletion(lesson_id=body.lesson_id)
+        completion = {
+            "lesson_id": body.lesson_id,
+            "completed_at": datetime.utcnow(),
+            "score": body.score,
+        }
         await db.student_progress.update_one(
             {"_id": progress_doc["_id"]},
             {
-                "$push": {"lesson_completions": completion.model_dump()},
+                "$push": {"lesson_completions": completion},
                 "$set":  {"last_updated": datetime.utcnow()},
             },
         )
     else:
         # Create new progress document
-        completion = LessonCompletion(lesson_id=body.lesson_id)
+        completion = {
+            "lesson_id": body.lesson_id,
+            "completed_at": datetime.utcnow(),
+            "score": body.score,
+        }
         new_doc = {
             "student_id": student_id,
             "course_id":  body.course_id,
-            "lesson_completions": [completion.model_dump()],
+            "lesson_completions": [completion],
             "overall_progress_pct": 0.0,
             "last_updated": datetime.utcnow(),
         }
@@ -99,42 +120,52 @@ async def mark_lesson_complete(
 # ─────────────────────────────────────────────────────────────
 # GET /api/progress/{course_id}  — Student's own progress
 # ─────────────────────────────────────────────────────────────
-@router.get("/{course_id}")
+@router.get("/my/{course_id}")
 async def get_my_progress(
     course_id: str,
     token_data: TokenData = Depends(get_current_user),
 ):
-    """Get current student's progress in a course."""
+    """Get current user's own progress in a course."""
     db = get_db()
     student_id = token_data.user_id
     return await _build_progress_response(db, student_id, course_id)
 
 
 # ─────────────────────────────────────────────────────────────
-# GET /api/progress/{student_email}/{course_id}
-# Instructor-facing: lookup by student email
+# GET /api/progress/student/{course_id}
+# Authenticated student checks their own progress (used by lesson_view.html)
 # ─────────────────────────────────────────────────────────────
-@router.get("/{student_email}/{course_id}")
-async def get_student_progress(student_email: str, course_id: str):
+@router.get("/{course_id}")
+async def get_progress(
+    course_id: str,
+    token_data: TokenData = Depends(get_current_user),
+):
     """
-    Get a student's progress by email (no auth guard — used by lesson_view.html
-    which checks auth on the client).  Returns progress data for the progress bar.
+    Get authenticated user's progress in a course.
+    Used by lesson_view.html progress bar.
     """
     db = get_db()
+    return await _build_progress_response(db, token_data.user_id, course_id)
 
-    # resolve student_id from email
-    user = await db.users.find_one({"email": student_email})
-    if not user:
-        return {
-            "student": student_email,
-            "course_id": course_id,
-            "total_lessons_in_course": 0,
-            "completed_lessons_count": 0,
-            "completion_percentage": "0%",
-            "completed_lesson_ids": [],
-        }
 
-    return await _build_progress_response(db, str(user["_id"]), course_id)
+# ─────────────────────────────────────────────────────────────
+# GET /api/progress/instructor/{student_id}/{course_id}
+# Instructor checks a specific student's progress
+# ─────────────────────────────────────────────────────────────
+@router.get("/instructor/{student_id}/{course_id}")
+async def get_student_progress_by_id(
+    student_id: str,
+    course_id: str,
+    token_data: TokenData = Depends(get_current_user),
+):
+    """
+    Instructor views a student's progress by student_id.
+    Only instructors can call this.
+    """
+    if token_data.role != "instructor":
+        raise HTTPException(status_code=403, detail="Instructor access required")
+    db = get_db()
+    return await _build_progress_response(db, student_id, course_id)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -154,13 +185,16 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
         for ch in course.get("chapters", [])
     )
 
-    # Aggregation pipeline — same pattern as main.py but using student_id
+    # Aggregation pipeline — filter out noise values like "V", "", None
     pipeline = [
         {"$match": {"student_id": student_id, "course_id": course_id}},
         {"$unwind": "$lesson_completions"},
         {
             "$match": {
-                "lesson_completions.lesson_id": {"$nin": ["V", "v", "", None]}
+                "lesson_completions.lesson_id": {
+                    "$nin": ["V", "v", "", None],
+                    "$exists": True,
+                }
             }
         },
         {
@@ -168,6 +202,20 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
                 "_id": "$course_id",
                 "completed_count": {"$sum": 1},
                 "completed_lesson_ids": {"$push": "$lesson_completions.lesson_id"},
+                "quiz_scores": {
+                    "$push": {
+                        "$cond": [
+                            {
+                                "$and": [
+                                    {"$ne": ["$lesson_completions.score", None]},
+                                    {"$isNumber": "$lesson_completions.score"},
+                                ]
+                            },
+                            "$lesson_completions.score",
+                            "$$REMOVE",
+                        ]
+                    }
+                },
             }
         },
     ]
@@ -178,19 +226,23 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
     if result_list:
         completed_count = result_list[0]["completed_count"]
         completed_ids   = result_list[0]["completed_lesson_ids"]
+        quiz_scores     = [s for s in result_list[0].get("quiz_scores", []) if isinstance(s, (int, float))]
     else:
         completed_count = 0
         completed_ids   = []
+        quiz_scores     = []
 
     pct = round((completed_count / total) * 100, 2) if total > 0 else 0
+    avg_score = round(sum(quiz_scores) / len(quiz_scores), 1) if quiz_scores else None
 
     return {
         "student_id": student_id,
         "course_id": course_id,
         "total_lessons_in_course": total,
         "completed_lessons_count": completed_count,
-        "completion_percentage": f"{pct}%",
+        "completion_percentage": pct,
         "completed_lesson_ids": completed_ids,
+        "avg_quiz_score": avg_score,
     }
 
 

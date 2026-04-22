@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ course.title if course else "Course" }} — E-Learning CMS{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;">
+  <div style="text-align:center;">
+    <div class="loading" style="justify-content:center;font-size:15px;">
+      Loading course...
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const COURSE_ID = "{{ course.id if course else '' }}";
+const CHAPTERS  = {{ (course.chapters | tojson) if course else [] }};
+
+(function routeByRole() {
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    // Guest: redirect to login
+    window.location.href = '/login';
+    return;
+  }
+
+  let role = null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    role = payload.role;
+  } catch {
+    window.location.href = '/login';
+    return;
+  }
+
+  if (role === 'instructor') {
+    // Instructors go to the editor
+    window.location.href = `/courses/${COURSE_ID}/edit`;
+    return;
+  }
+
+  // Students: go to first lesson
+  for (const ch of CHAPTERS) {
+    if (ch.lessons && ch.lessons.length > 0) {
+      const firstLesson = ch.lessons[0];
+      window.location.href = `/courses/${COURSE_ID}/lessons/${firstLesson.lesson_id}`;
+      return;
+    }
+  }
+
+  // No lessons yet: show empty message
+  document.querySelector('.loading').textContent = 'This course has no lessons yet.';
+})();
+</script>
+{% endblock %}

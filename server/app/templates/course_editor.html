@@ -1,260 +1,1065 @@
 {% extends "base.html" %}
-{% block title %}Course Editor — E-Learning CMS{% endblock %}
+{% block title %}Course Editor — {{ course.title if course else "E-Learning CMS" }}{% endblock %}
 
 {% block content %}
-<div class="editor-layout">
+<div class="editor-layout" id="editor-root">
 
-  <!-- — LEFT: Course tree sidebar — -->
-  <aside class="editor-sidebar">
+  <!-- ═══ LEFT: Course tree sidebar ═══ -->
+  <aside class="editor-sidebar" id="editor-sidebar">
     <div class="sidebar-header">
-      <h2 class="sidebar-title" id="course-title">{{ course.title if course else "Loading..." }}</h2>
-      <button class="btn btn-sm" id="btn-add-chapter" type="button">+ Chapter</button>
+      <div class="sidebar-title-wrap">
+        <h2 class="sidebar-title" id="course-title-display">{{ course.title if course else "Loading..." }}</h2>
+        <span class="sidebar-subtitle" id="course-meta-display"></span>
+      </div>
+      <button class="btn btn-sm btn-primary" id="btn-add-chapter" type="button">
+        + Chapter
+      </button>
+    </div>
+
+    <!-- Search box -->
+    <div class="sidebar-search">
+      <input type="text" id="lesson-search" placeholder="Search lessons..." autocomplete="off" />
     </div>
 
     <div class="tree-container" id="course-tree">
-      {% if course %}
-        {% for ch in course.chapters %}
-          <div class="tree-chapter" id="ch-{{ ch.chapter_id|e }}">
-            <div class="tree-chapter-header" data-action="toggle-chapter">
-              <span class="tree-chevron" aria-hidden="true">▾</span>
-              <span class="tree-chapter-title">{{ ch.title }}</span>
-            </div>
-            <div class="tree-lessons">
-              {% for ls in ch.lessons %}
-                <div class="tree-lesson" data-action="select-lesson" data-lesson-id="{{ ls.lesson_id|e }}">
-                  <span class="lesson-icon" aria-hidden="true">
-                    {% if ls.type == "video" %}▶{% elif ls.type == "quiz" %}?{% else %}≡{% endif %}
-                  </span>
-                  <span class="lesson-title">{{ ls.title }}</span>
-                </div>
-              {% endfor %}
-              <div class="tree-add-lesson" role="button" tabindex="0" data-action="add-lesson" data-chapter-id="{{ ch.chapter_id|e }}">
-                + Add lesson
-              </div>
-            </div>
-          </div>
-        {% endfor %}
-      {% else %}
-        <div class="loading">Loading structure...</div>
-      {% endif %}
+      <div class="loading">Loading course structure...</div>
+    </div>
+
+    <!-- Course actions footer -->
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-edit-course-meta" title="Edit course title/description">
+        ✏ Edit Info
+      </button>
+      <a class="btn btn-ghost btn-sm" href="/analytics/{{ course.id if course else '' }}" target="_blank">
+        📊 Analytics
+      </a>
     </div>
   </aside>
 
-  <!-- — RIGHT: Lesson content panel — -->
-  <section class="editor-content">
+  <!-- ═══ RIGHT: Content panel ═══ -->
+  <section class="editor-content" id="editor-content">
     <div id="content-panel">
-      <div class="empty-state">
-        <p>Select a lesson from the left to view or edit its content.</p>
+      <div class="empty-state-editor">
+        <div class="empty-state-icon">🎯</div>
+        <h3>Select a lesson</h3>
+        <p>Click any lesson in the left panel to view or edit its content.</p>
+        <p class="muted" style="font-size:12px;margin-top:8px;">Drag lessons to reorder them.</p>
       </div>
     </div>
   </section>
 
 </div>
+
+<!-- ══════ MODALS ══════ -->
+
+<!-- Add Chapter Modal -->
+<div class="modal-overlay" id="modal-add-chapter" style="display:none;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Chapter</h2>
+      <button class="modal-close" onclick="closeModal('modal-add-chapter')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="add-chapter-error" class="alert alert-error hidden"></div>
+      <div class="form-group">
+        <label for="new-chapter-title">Chapter Title</label>
+        <input type="text" id="new-chapter-title" placeholder="e.g. Introduction to Python" autofocus />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-add-chapter')">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-add-chapter">Add Chapter</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Lesson Modal -->
+<div class="modal-overlay" id="modal-add-lesson" style="display:none;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Lesson</h2>
+      <button class="modal-close" onclick="closeModal('modal-add-lesson')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="add-lesson-error" class="alert alert-error hidden"></div>
+      <div class="form-group">
+        <label for="new-lesson-title">Lesson Title</label>
+        <input type="text" id="new-lesson-title" placeholder="e.g. What is Python?" />
+      </div>
+      <div class="form-group">
+        <label>Lesson Type</label>
+        <div class="lesson-type-picker" id="lesson-type-picker">
+          <button type="button" class="type-btn active" data-type="video">▶ Video</button>
+          <button type="button" class="type-btn" data-type="document">≡ Document</button>
+          <button type="button" class="type-btn" data-type="quiz">? Quiz</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-add-lesson')">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-add-lesson">Add Lesson</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Course Meta Modal -->
+<div class="modal-overlay" id="modal-edit-course" style="display:none;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Course Info</h2>
+      <button class="modal-close" onclick="closeModal('modal-edit-course')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="edit-course-error" class="alert alert-error hidden"></div>
+      <div class="form-group">
+        <label for="edit-course-title">Title</label>
+        <input type="text" id="edit-course-title" />
+      </div>
+      <div class="form-group">
+        <label for="edit-course-desc">Description</label>
+        <textarea id="edit-course-desc" rows="3"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-edit-course')">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-edit-course">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div class="modal-overlay" id="modal-confirm-delete" style="display:none;">
+  <div class="modal-content" style="max-width:380px;">
+    <div class="modal-header">
+      <h2 class="modal-title">Confirm Delete</h2>
+      <button class="modal-close" onclick="closeModal('modal-confirm-delete')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="delete-confirm-msg" style="color:var(--text-2);font-size:14px;margin-bottom:20px;"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-confirm-delete')">Cancel</button>
+        <button class="btn" id="btn-confirm-delete" style="background:#EF4444;color:white;border:none;">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-window.__COURSE_ID__ = "{{ course.id if course else '' }}";
+// ════════════════════════════════════════════
+//  CONSTANTS & STATE
+// ════════════════════════════════════════════
+const COURSE_ID   = "{{ course.id if course else '' }}";
+const LESSON_ICON = { video: '▶', quiz: '?', document: '≡' };
+const CARD_COLORS = ['blue','purple','cyan','warm','green','indigo'];
 
-// ================= STATE =================
-let currentLesson = null;
-let lessonIndex = {};
+let courseData    = null;   // full course JSON from server
+let currentLesson = null;   // { lessonId, chapterId, type, title }
+let pendingDeleteFn = null; // fn to call on confirm delete
+let pendingAddLessonChapterId = null;
+let isDirty = false;        // unsaved changes flag
 
-const LESSON_TYPE_ICON = { video: '▶', quiz: '?', document: '≡' };
+// ── Drag state ──
+let dragEl = null, dragOverEl = null, dragType = null; // 'chapter' | 'lesson'
+let dragSourceChapterId = null;
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function buildLessonIndex(course) {
-  const index = {};
-  for (const chapter of course.chapters || []) {
-    for (const lesson of chapter.lessons || []) {
-      index[lesson.lesson_id] = { ...lesson };
+// ════════════════════════════════════════════
+//  ROLE GUARD — redirect students
+// ════════════════════════════════════════════
+(function guardRole() {
+  const token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.role !== 'instructor') {
+      // Students go to lesson viewer
+      window.location.href = `/courses/${COURSE_ID}`;
     }
-  }
-  return index;
+  } catch { window.location.href = '/login'; }
+})();
+
+// ════════════════════════════════════════════
+//  UTILITIES
+// ════════════════════════════════════════════
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderTree(course) {
-  lessonIndex = buildLessonIndex(course);
-  document.getElementById('course-title').textContent = course.title;
-  const tree = document.getElementById('course-tree');
+function authHeaders() {
+  const t = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(t ? {'Authorization': `Bearer ${t}`} : {}),
+  };
+}
 
-  tree.innerHTML = (course.chapters || []).map(ch => `
-    <div class="tree-chapter" id="ch-${escapeHtml(ch.chapter_id)}">
+function toast(type, title, msg, duration = 3000) {
+  const icons = { success:'✓', error:'✕', info:'ℹ', warning:'⚠' };
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `
+    <div class="toast-icon">${icons[type]||'ℹ'}</div>
+    <div class="toast-body"><div class="toast-title">${esc(title)}</div><div class="toast-msg">${esc(msg)}</div></div>
+    <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+  `;
+  c.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 400);
+  }, duration);
+}
+
+function setDirty(v) {
+  isDirty = v;
+  document.title = v ? '● ' + document.title.replace('● ','') : document.title.replace('● ','');
+}
+
+// ════════════════════════════════════════════
+//  MODALS
+// ════════════════════════════════════════════
+function openModal(id) {
+  document.getElementById(id).style.display = 'flex';
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+// ════════════════════════════════════════════
+//  LOAD & RENDER COURSE TREE
+// ════════════════════════════════════════════
+async function loadCourse() {
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}`, { headers: authHeaders() });
+    if (!res.ok) {
+      const e = await res.json();
+      throw new Error(e.detail || 'Failed to load course');
+    }
+    courseData = await res.json();
+    renderTree();
+    updateCourseMeta();
+  } catch (err) {
+    document.getElementById('course-tree').innerHTML =
+      `<div class="alert alert-error" style="margin:12px">${esc(err.message)}</div>`;
+  }
+}
+
+function updateCourseMeta() {
+  if (!courseData) return;
+  document.getElementById('course-title-display').textContent = courseData.title || '';
+  const chCount  = (courseData.chapters || []).length;
+  const lsCount  = (courseData.chapters || []).reduce((s,c)=>s+(c.lessons||[]).length,0);
+  document.getElementById('course-meta-display').textContent =
+    `${chCount} chapter${chCount!==1?'s':''} · ${lsCount} lesson${lsCount!==1?'s':''}`;
+}
+
+function renderTree(filterQ = '') {
+  if (!courseData) return;
+  const tree = document.getElementById('course-tree');
+  const q = filterQ.toLowerCase();
+
+  const chapters = courseData.chapters || [];
+  if (!chapters.length) {
+    tree.innerHTML = `
+      <div class="tree-empty">
+        <p>No chapters yet.</p>
+        <button class="btn btn-sm btn-secondary" onclick="openAddChapterModal()">+ Add Chapter</button>
+      </div>`;
+    return;
+  }
+
+  tree.innerHTML = chapters.map((ch, ci) => {
+    const lessons = (ch.lessons || []).filter(ls =>
+      !q || ls.title.toLowerCase().includes(q)
+    );
+    const hidden = q && !lessons.length && !ch.title.toLowerCase().includes(q);
+    if (hidden) return '';
+
+    return `
+    <div class="tree-chapter" id="ch-${esc(ch.chapter_id)}"
+         draggable="true"
+         data-chapter-id="${esc(ch.chapter_id)}"
+         data-drag-type="chapter">
       <div class="tree-chapter-header" data-action="toggle-chapter">
-        <span class="tree-chevron" aria-hidden="true">▾</span>
-        <span class="tree-chapter-title">${escapeHtml(ch.title)}</span>
-      </div>
-      <div class="tree-lessons">
-        ${(ch.lessons || []).map(ls => `
-          <div class="tree-lesson" data-action="select-lesson" data-lesson-id="${escapeHtml(ls.lesson_id)}">
-            <span class="lesson-icon" aria-hidden="true">${LESSON_TYPE_ICON[ls.type] || '•'}</span>
-            <span class="lesson-title">${escapeHtml(ls.title)}</span>
-          </div>
-        `).join('')}
-        <div class="tree-add-lesson" role="button" tabindex="0" data-action="add-lesson" data-chapter-id="${escapeHtml(ch.chapter_id)}">
-          + Add lesson
+        <span class="drag-handle chapter-drag" title="Drag to reorder">⠿</span>
+        <span class="tree-chevron">▾</span>
+        <span class="tree-chapter-title">${esc(ch.title)}</span>
+        <span class="tree-chapter-count">${lessons.length}</span>
+        <div class="tree-chapter-actions">
+          <button class="tree-action-btn" title="Delete chapter"
+            onclick="event.stopPropagation(); confirmDeleteChapter('${esc(ch.chapter_id)}', '${esc(ch.title)}')"
+          >🗑</button>
         </div>
       </div>
-    </div>
-  `).join('');
+      <div class="tree-lessons" id="lessons-${esc(ch.chapter_id)}">
+        ${lessons.map((ls, li) => `
+          <div class="tree-lesson${currentLesson && currentLesson.lessonId===ls.lesson_id?' active':''}"
+               id="ls-${esc(ls.lesson_id)}"
+               draggable="true"
+               data-lesson-id="${esc(ls.lesson_id)}"
+               data-chapter-id="${esc(ch.chapter_id)}"
+               data-drag-type="lesson"
+               data-action="select-lesson">
+            <span class="drag-handle lesson-drag" title="Drag to reorder">⠿</span>
+            <span class="lesson-icon lesson-icon-${esc(ls.type)}">${LESSON_ICON[ls.type]||'•'}</span>
+            <span class="lesson-title">${esc(ls.title)}</span>
+            <button class="tree-action-btn" title="Delete lesson"
+              onclick="event.stopPropagation(); confirmDeleteLesson('${esc(ch.chapter_id)}', '${esc(ls.lesson_id)}', '${esc(ls.title)}')"
+            >🗑</button>
+          </div>
+        `).join('')}
+        <div class="tree-add-lesson" data-action="add-lesson" data-chapter-id="${esc(ch.chapter_id)}" tabindex="0" role="button">
+          + Add Lesson
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  attachTreeEvents();
 }
 
-// ================= SELECT LESSON =================
-async function selectLesson(lessonId, clickedEl) {
-  const courseId = window.__COURSE_ID__ || '';
-  if (!courseId) return;
+// ════════════════════════════════════════════
+//  TREE EVENT DELEGATION
+// ════════════════════════════════════════════
+function attachTreeEvents() {
+  const tree = document.getElementById('course-tree');
+
+  tree.onclick = (e) => {
+    // Select lesson
+    const lessonEl = e.target.closest('[data-action="select-lesson"]');
+    if (lessonEl && !e.target.closest('.tree-action-btn')) {
+      selectLesson(lessonEl.dataset.lessonId, lessonEl.dataset.chapterId);
+      return;
+    }
+    // Toggle chapter
+    const headerEl = e.target.closest('[data-action="toggle-chapter"]');
+    if (headerEl && !e.target.closest('.tree-action-btn')) {
+      toggleChapter(headerEl.closest('.tree-chapter'));
+      return;
+    }
+    // Add lesson
+    const addEl = e.target.closest('[data-action="add-lesson"]');
+    if (addEl) {
+      openAddLessonModal(addEl.dataset.chapterId);
+    }
+  };
+
+  tree.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const addEl = e.target.closest('[data-action="add-lesson"]');
+    if (addEl) { e.preventDefault(); openAddLessonModal(addEl.dataset.chapterId); }
+  };
+
+  // Drag & drop
+  tree.querySelectorAll('[draggable="true"]').forEach(el => {
+    el.addEventListener('dragstart', onDragStart);
+    el.addEventListener('dragend',   onDragEnd);
+    el.addEventListener('dragover',  onDragOver);
+    el.addEventListener('drop',      onDrop);
+    el.addEventListener('dragleave', onDragLeave);
+  });
+}
+
+// ════════════════════════════════════════════
+//  DRAG & DROP
+// ════════════════════════════════════════════
+function onDragStart(e) {
+  dragEl   = this;
+  dragType = this.dataset.dragType;
+  dragSourceChapterId = this.dataset.chapterId || null;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', this.id);
+  setTimeout(() => this.classList.add('dragging'), 0);
+}
+
+function onDragEnd() {
+  dragEl?.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  dragEl = dragOverEl = null;
+}
+
+function onDragOver(e) {
+  if (!dragEl || dragEl === this) return;
+  if (this.dataset.dragType !== dragType) return; // don't mix chapters and lessons
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  this.classList.add('drag-over');
+  dragOverEl = this;
+}
+
+function onDragLeave() {
+  this.classList.remove('drag-over');
+}
+
+async function onDrop(e) {
+  e.preventDefault();
+  if (!dragEl || !dragOverEl || dragEl === dragOverEl) return;
+  if (dragEl.dataset.dragType !== dragOverEl.dataset.dragType) return;
+
+  const chapters = courseData.chapters || [];
+
+  if (dragType === 'chapter') {
+    const fromIdx = chapters.findIndex(c => c.chapter_id === dragEl.dataset.chapterId);
+    const toIdx   = chapters.findIndex(c => c.chapter_id === dragOverEl.dataset.chapterId);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    const [moved] = chapters.splice(fromIdx, 1);
+    chapters.splice(toIdx, 0, moved);
+    chapters.forEach((c, i) => c.order = i);
+
+    renderTree(document.getElementById('lesson-search').value);
+    await saveReorder();
+
+  } else if (dragType === 'lesson') {
+    const srcChId  = dragEl.dataset.chapterId;
+    const dstChId  = dragOverEl.dataset.chapterId;
+    const srcCh    = chapters.find(c => c.chapter_id === srcChId);
+    const dstCh    = chapters.find(c => c.chapter_id === dstChId);
+    if (!srcCh || !dstCh) return;
+
+    const fromIdx = srcCh.lessons.findIndex(l => l.lesson_id === dragEl.dataset.lessonId);
+    const toIdx   = dstCh.lessons.findIndex(l => l.lesson_id === dragOverEl.dataset.lessonId);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    const [moved] = srcCh.lessons.splice(fromIdx, 1);
+    dstCh.lessons.splice(toIdx, 0, moved);
+    srcCh.lessons.forEach((l,i) => l.order = i);
+    if (srcChId !== dstChId) dstCh.lessons.forEach((l,i) => l.order = i);
+
+    renderTree(document.getElementById('lesson-search').value);
+    await saveReorder();
+  }
+}
+
+async function saveReorder() {
+  const chapters = (courseData.chapters || []).map((c, i) => ({
+    chapter_id: c.chapter_id, order: i,
+  }));
+  const lessons = {};
+  (courseData.chapters || []).forEach(c => {
+    lessons[c.chapter_id] = (c.lessons || []).map((l, i) => ({
+      lesson_id: l.lesson_id, order: i,
+    }));
+  });
+
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}/reorder`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ chapters, lessons }),
+    });
+    if (!res.ok) throw new Error('Reorder failed');
+    toast('success', 'Reordered', 'New order saved.', 1500);
+  } catch (err) {
+    toast('error', 'Reorder failed', err.message);
+  }
+}
+
+// ════════════════════════════════════════════
+//  CHAPTER TOGGLE
+// ════════════════════════════════════════════
+function toggleChapter(chEl) {
+  const lessonsEl = chEl?.querySelector('.tree-lessons');
+  const chevron   = chEl?.querySelector('.tree-chevron');
+  if (!lessonsEl) return;
+  const hidden = lessonsEl.classList.toggle('hidden');
+  if (chevron) chevron.textContent = hidden ? '▸' : '▾';
+}
+
+// ════════════════════════════════════════════
+//  SELECT LESSON → render right panel
+// ════════════════════════════════════════════
+async function selectLesson(lessonId, chapterId) {
+  if (isDirty) {
+    if (!confirm('You have unsaved changes. Discard them?')) return;
+    setDirty(false);
+  }
 
   document.querySelectorAll('.tree-lesson').forEach(e => e.classList.remove('active'));
-  if (clickedEl) clickedEl.classList.add('active');
+  const el = document.getElementById(`ls-${lessonId}`);
+  if (el) el.classList.add('active');
+
+  currentLesson = { lessonId, chapterId };
 
   const panel = document.getElementById('content-panel');
-  panel.innerHTML = '<div class="loading">Loading lesson...</div>';
+  panel.innerHTML = '<div class="loading" style="padding:40px;">Loading lesson...</div>';
 
   try {
-    const res = await fetch(`/api/courses/${courseId}/lessons/${encodeURIComponent(lessonId)}`);
+    const res = await fetch(`/api/courses/${COURSE_ID}/lessons/${encodeURIComponent(lessonId)}`, {
+      headers: authHeaders(),
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load lesson');
-
-    const meta = data;
-    currentLesson = { lessonId: meta.lesson_id, type: meta.type, title: meta.title };
-
-    if (meta.type === 'video') {
-      panel.innerHTML = `
-        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-video">Video</span></div>
-        <div class="form-group"><label>Video URL</label><input type="text" value="${escapeHtml(meta.video_url || '')}" placeholder="https://..." /></div>
-        <div class="form-group"><label>Duration (seconds)</label><input type="number" value="${meta.duration_seconds ?? ''}" placeholder="300" /></div>
-        <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
-      `;
-      return;
-    }
-
-    if (meta.type === 'quiz') {
-      panel.innerHTML = `
-        <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-quiz">Quiz</span></div>
-        <p class="muted">Quiz editor — Day 4 (Quyen)</p>
-      `;
-      return;
-    }
-
-    panel.innerHTML = `
-      <div class="content-header"><h3>${escapeHtml(meta.title)}</h3><span class="badge badge-doc">Document</span></div>
-      <div class="form-group"><label>Content</label><textarea rows="12" placeholder="Write content here...">${escapeHtml(meta.content || '')}</textarea></div>
-      <button class="btn btn-primary" type="button" data-action="save-lesson">Save</button>
-    `;
+    currentLesson.type  = data.type;
+    currentLesson.title = data.title;
+    renderLessonPanel(data, chapterId);
   } catch (err) {
-    panel.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message || String(err))}</div>`;
+    panel.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
   }
 }
 
-async function refreshCourseTree() {
-  const courseId = window.__COURSE_ID__ || '';
-  if (!courseId) return;
+function renderLessonPanel(meta, chapterId) {
+  const panel = document.getElementById('content-panel');
+
+  const typeLabels = { video: 'Video', quiz: 'Quiz', document: 'Document' };
+  const badgeClass = { video: 'badge-video', quiz: 'badge-quiz', document: 'badge-doc' };
+
+  let contentHtml = '';
+
+  if (meta.type === 'video') {
+    contentHtml = `
+      <div class="form-group">
+        <label for="f-title">Lesson Title</label>
+        <input type="text" id="f-title" value="${esc(meta.title)}" />
+      </div>
+      <div class="form-group">
+        <label for="f-video-url">Video URL</label>
+        <input type="url" id="f-video-url" value="${esc(meta.video_url||'')}" placeholder="https://youtube.com/watch?v=..." />
+      </div>
+      <div class="form-group">
+        <label for="f-duration">Duration (seconds)</label>
+        <input type="number" id="f-duration" value="${meta.duration_seconds??''}" placeholder="300" min="0" />
+      </div>
+      ${meta.video_url ? `
+        <div class="video-preview">
+          <div class="video-preview-label">Preview</div>
+          ${meta.video_url.includes('youtube') || meta.video_url.includes('youtu.be')
+            ? `<iframe src="${meta.video_url.replace('watch?v=','embed/').replace('youtu.be/','www.youtube.com/embed/')}"
+                 frameborder="0" allowfullscreen style="width:100%;aspect-ratio:16/9;border-radius:8px;"></iframe>`
+            : `<video controls src="${esc(meta.video_url)}" style="width:100%;max-height:300px;border-radius:8px;"></video>`
+          }
+        </div>` : ''}`;
+
+  } else if (meta.type === 'document') {
+    contentHtml = `
+      <div class="form-group">
+        <label for="f-title">Lesson Title</label>
+        <input type="text" id="f-title" value="${esc(meta.title)}" />
+      </div>
+      <div class="form-group">
+        <label for="f-content">Content (Markdown supported)</label>
+        <textarea id="f-content" rows="14" style="font-family:var(--font-mono);font-size:13px;">${esc(meta.content||'')}</textarea>
+      </div>`;
+
+  } else if (meta.type === 'quiz') {
+    const questions = meta.questions || [];
+    contentHtml = `
+      <div class="form-group">
+        <label for="f-title">Quiz Title</label>
+        <input type="text" id="f-title" value="${esc(meta.title)}" />
+      </div>
+      <div class="quiz-editor" id="quiz-editor">
+        ${questions.map((q, qi) => renderQuestionEditor(q, qi)).join('')}
+      </div>
+      <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="margin-top:8px;">
+        + Add Question
+      </button>`;
+  }
+
+  panel.innerHTML = `
+    <div class="lesson-panel">
+      <div class="lesson-panel-header">
+        <div>
+          <span class="badge ${badgeClass[meta.type]||''}">
+            ${LESSON_ICON[meta.type]||'•'} ${typeLabels[meta.type]||meta.type}
+          </span>
+        </div>
+        <div class="lesson-panel-actions">
+          <button class="btn btn-ghost btn-sm" id="btn-preview"
+            onclick="previewLesson('${esc(meta.lesson_id)}')" title="Open student view in new tab">
+            👁 Preview
+          </button>
+          <button class="btn btn-primary btn-sm" id="btn-save-lesson" onclick="saveLesson()">
+            💾 Save
+          </button>
+        </div>
+      </div>
+      <div class="lesson-form">
+        ${contentHtml}
+      </div>
+    </div>`;
+
+  // Attach change listeners to mark dirty
+  panel.querySelectorAll('input,textarea,select').forEach(el => {
+    el.addEventListener('input', () => setDirty(true));
+  });
+}
+
+function renderQuestionEditor(q, qi) {
+  const opts = (q.options || ['', '', '']).map((opt, oi) => `
+    <div class="quiz-option-row">
+      <input type="radio" name="correct-${qi}" value="${oi}"
+        ${q.correct_index === oi ? 'checked' : ''} title="Mark as correct" />
+      <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}"
+        value="${esc(opt)}" placeholder="Option ${oi+1}" />
+      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove option">×</button>
+    </div>`).join('');
+
+  return `
+    <div class="quiz-question-block" data-qi="${qi}" id="qq-${qi}">
+      <div class="quiz-question-header">
+        <span class="quiz-q-num">Q${qi+1}</span>
+        <input type="text" class="quiz-q-text" data-qi="${qi}"
+          value="${esc(q.question||'')}" placeholder="Question text..." />
+        <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Delete question">🗑</button>
+      </div>
+      <div class="quiz-options-list" id="opts-${qi}">${opts}</div>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="addOption(${qi})"
+        style="margin-top:6px;">+ Option</button>
+    </div>`;
+}
+
+// ── Quiz editor helpers ──
+function addQuestion() {
+  const editor = document.getElementById('quiz-editor');
+  if (!editor) return;
+  const qi = editor.querySelectorAll('.quiz-question-block').length;
+  const div = document.createElement('div');
+  div.innerHTML = renderQuestionEditor({ question:'', options:['','',''], correct_index:0 }, qi);
+  editor.appendChild(div.firstElementChild);
+  setDirty(true);
+}
+
+function removeQuestion(qi) {
+  const block = document.getElementById(`qq-${qi}`);
+  if (block) block.remove();
+  // Re-index
+  document.querySelectorAll('.quiz-question-block').forEach((b, i) => {
+    b.dataset.qi = i;
+    b.id = `qq-${i}`;
+    b.querySelector('.quiz-q-num').textContent = `Q${i+1}`;
+    b.querySelector('.quiz-q-text').dataset.qi = i;
+    b.querySelector('[onclick^="removeQuestion"]').setAttribute('onclick', `removeQuestion(${i})`);
+    b.querySelector('[onclick^="addOption"]').setAttribute('onclick', `addOption(${i})`);
+    b.querySelectorAll('.quiz-option-input').forEach((inp, oi) => {
+      inp.dataset.qi = i; inp.dataset.oi = oi;
+    });
+    b.querySelectorAll('.quiz-option-row input[type=radio]').forEach((r, oi) => {
+      r.name = `correct-${i}`; r.value = oi;
+    });
+    b.querySelectorAll('[onclick^="removeOption"]').forEach((btn, oi) => {
+      btn.setAttribute('onclick', `removeOption(${i},${oi})`);
+    });
+  });
+  setDirty(true);
+}
+
+function addOption(qi) {
+  const list = document.getElementById(`opts-${qi}`);
+  if (!list) return;
+  const oi = list.querySelectorAll('.quiz-option-row').length;
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="quiz-option-row">
+      <input type="radio" name="correct-${qi}" value="${oi}" title="Mark as correct" />
+      <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}" placeholder="Option ${oi+1}" />
+      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove">×</button>
+    </div>`;
+  list.appendChild(div.firstElementChild);
+  setDirty(true);
+}
+
+function removeOption(qi, oi) {
+  const list = document.getElementById(`opts-${qi}`);
+  const rows = list?.querySelectorAll('.quiz-option-row');
+  if (!rows || rows.length <= 2) { toast('warning','Min 2 options','At least 2 options required.'); return; }
+  rows[oi]?.remove();
+  // Re-index options
+  list.querySelectorAll('.quiz-option-row').forEach((row, newOi) => {
+    row.querySelector('input[type=radio]').value = newOi;
+    const inp = row.querySelector('.quiz-option-input');
+    inp.dataset.oi = newOi;
+    inp.placeholder = `Option ${newOi+1}`;
+    row.querySelector('[onclick^="removeOption"]').setAttribute('onclick', `removeOption(${qi},${newOi})`);
+  });
+  setDirty(true);
+}
+
+function collectQuizQuestions() {
+  const blocks = document.querySelectorAll('.quiz-question-block');
+  return Array.from(blocks).map((block) => {
+    const qi      = parseInt(block.dataset.qi);
+    const question = block.querySelector('.quiz-q-text')?.value || '';
+    const optInputs = block.querySelectorAll('.quiz-option-input');
+    const options   = Array.from(optInputs).map(i => i.value);
+    const checkedRadio = block.querySelector(`input[name="correct-${qi}"]:checked`);
+    const correct_index = checkedRadio ? parseInt(checkedRadio.value) : 0;
+    return { question, options, correct_index };
+  });
+}
+
+// ════════════════════════════════════════════
+//  SAVE LESSON
+// ════════════════════════════════════════════
+async function saveLesson() {
+  if (!currentLesson) return;
+  const { lessonId, chapterId, type } = currentLesson;
+  const btn = document.getElementById('btn-save-lesson');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  const title = document.getElementById('f-title')?.value || '';
+  let payload = { title, type, order: 0 };
+
+  if (type === 'video') {
+    payload.video_url       = document.getElementById('f-video-url')?.value || null;
+    payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
+  } else if (type === 'document') {
+    payload.content = document.getElementById('f-content')?.value || '';
+  } else if (type === 'quiz') {
+    payload.questions = collectQuizQuestions();
+  }
 
   try {
-    const res = await fetch(`/api/courses/${courseId}`);
+    const res = await fetch(
+      `/api/courses/${COURSE_ID}/chapters/${chapterId}/lessons/${lessonId}`,
+      { method: 'PUT', headers: authHeaders(), body: JSON.stringify(payload) }
+    );
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to load course');
-    renderTree(data);
+    if (!res.ok) throw new Error(data.detail || 'Save failed');
+
+    toast('success', 'Saved', 'Lesson saved successfully.');
+    setDirty(false);
+
+    // Update local cache title
+    const ch = (courseData?.chapters||[]).find(c=>c.chapter_id===chapterId);
+    const ls = ch?.lessons?.find(l=>l.lesson_id===lessonId);
+    if (ls) { ls.title = title; ls.type = type; }
+    const treeEl = document.getElementById(`ls-${lessonId}`);
+    if (treeEl) treeEl.querySelector('.lesson-title').textContent = title;
+
   } catch (err) {
-      console.warn("Failed to refresh course:", err);
+    toast('error', 'Save failed', err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Save'; }
   }
 }
 
-// (Legacy) keep a sync alias for other onclick usage if any
-function selectLessonSync(lessonId) {
-  const el = document.querySelector(`.tree-lesson[data-lesson-id="${CSS.escape(lessonId)}"]`);
-  selectLesson(lessonId, el);
+function previewLesson(lessonId) {
+  window.open(`/courses/${COURSE_ID}/lessons/${lessonId}`, '_blank');
 }
 
-// ================= SAVE =================
-function saveLesson() {
-  if (!currentLesson) return;
-
-  const meta = lessonIndex[currentLesson.lessonId];
-  if (!meta) return;
-
-  alert('TODO Day 2: Save lesson ' + currentLesson.lessonId);
+// ════════════════════════════════════════════
+//  ADD CHAPTER
+// ════════════════════════════════════════════
+function openAddChapterModal() {
+  document.getElementById('new-chapter-title').value = '';
+  document.getElementById('add-chapter-error').classList.add('hidden');
+  openModal('modal-add-chapter');
+  setTimeout(() => document.getElementById('new-chapter-title').focus(), 100);
 }
 
-// ================= TREE TOGGLE =================
-function toggleChapter(el) {
-  const lessons = el.nextElementSibling;
-  const icon = el.querySelector('.tree-chevron');
-  if (!lessons || !icon) return;
+async function doAddChapter() {
+  const title   = document.getElementById('new-chapter-title').value.trim();
+  const errBox  = document.getElementById('add-chapter-error');
+  const btn     = document.getElementById('btn-confirm-add-chapter');
+  errBox.classList.add('hidden');
 
-  if (lessons.classList.contains('hidden')) {
-    lessons.classList.remove('hidden');
-    icon.textContent = '▾';
-  } else {
-    lessons.classList.add('hidden');
-    icon.textContent = '▸';
+  if (!title) {
+    errBox.textContent = 'Please enter a chapter title.';
+    errBox.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Adding...';
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}/chapters`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ title, order: (courseData?.chapters||[]).length }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to add chapter');
+
+    toast('success', 'Chapter added', `"${title}" created.`);
+    closeModal('modal-add-chapter');
+    await loadCourse();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Add Chapter';
   }
 }
 
-// ================= ADD =================
-function addChapter() {
-  const name = prompt('Chapter title:');
-  if (!name) return;
-  alert('TODO Day 2: POST /api/courses/:id/chapters — ' + name);
+// ════════════════════════════════════════════
+//  ADD LESSON
+// ════════════════════════════════════════════
+function openAddLessonModal(chapterId) {
+  pendingAddLessonChapterId = chapterId;
+  document.getElementById('new-lesson-title').value = '';
+  document.getElementById('add-lesson-error').classList.add('hidden');
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('active', b.dataset.type==='video'));
+  openModal('modal-add-lesson');
+  setTimeout(() => document.getElementById('new-lesson-title').focus(), 100);
 }
 
-function addLesson(chapterId) {
-  const name = prompt('Lesson title:');
-  if (!name) return;
-  alert('TODO Day 2: POST /api/courses/:id/chapters/:ch/lessons — ' + name);
+async function doAddLesson() {
+  const title   = document.getElementById('new-lesson-title').value.trim();
+  const type    = document.querySelector('.type-btn.active')?.dataset.type || 'video';
+  const errBox  = document.getElementById('add-lesson-error');
+  const btn     = document.getElementById('btn-confirm-add-lesson');
+  errBox.classList.add('hidden');
+
+  if (!title) {
+    errBox.textContent = 'Please enter a lesson title.';
+    errBox.classList.remove('hidden');
+    return;
+  }
+
+  const ch     = (courseData?.chapters||[]).find(c=>c.chapter_id===pendingAddLessonChapterId);
+  const order  = ch ? (ch.lessons||[]).length : 0;
+  const body   = { title, type, order };
+  if (type === 'video') { body.video_url = null; body.duration_seconds = null; }
+  if (type === 'document') { body.content = ''; }
+  if (type === 'quiz') { body.questions = []; }
+
+  btn.disabled = true; btn.textContent = 'Adding...';
+  try {
+    const res = await fetch(
+      `/api/courses/${COURSE_ID}/chapters/${pendingAddLessonChapterId}/lessons`,
+      { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to add lesson');
+
+    toast('success', 'Lesson added', `"${title}" created.`);
+    closeModal('modal-add-lesson');
+    await loadCourse();
+    // Auto-select new lesson
+    if (data.lesson_id) selectLesson(data.lesson_id, pendingAddLessonChapterId);
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Add Lesson';
+  }
 }
 
-function initCourseEditor() {
-  const tree = document.getElementById('course-tree');
-  if (!tree) return;
+// ════════════════════════════════════════════
+//  DELETE
+// ════════════════════════════════════════════
+function confirmDeleteChapter(chapterId, title) {
+  document.getElementById('delete-confirm-msg').textContent =
+    `Delete chapter "${title}" and all its lessons? This cannot be undone.`;
+  pendingDeleteFn = () => deleteChapter(chapterId);
+  openModal('modal-confirm-delete');
+}
 
-  tree.addEventListener('click', (e) => {
-    const saveBtn = e.target.closest('[data-action="save-lesson"]');
-    if (saveBtn) {
-      saveLesson();
-      return;
-    }
+function confirmDeleteLesson(chapterId, lessonId, title) {
+  document.getElementById('delete-confirm-msg').textContent =
+    `Delete lesson "${title}"? This cannot be undone.`;
+  pendingDeleteFn = () => deleteLesson(chapterId, lessonId);
+  openModal('modal-confirm-delete');
+}
 
-    const lessonEl = e.target.closest('.tree-lesson');
-    if (lessonEl && tree.contains(lessonEl)) {
-      selectLesson(lessonEl.dataset.lessonId, lessonEl);
-      return;
+async function deleteChapter(chapterId) {
+  closeModal('modal-confirm-delete');
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}/chapters/${chapterId}`, {
+      method: 'DELETE', headers: authHeaders(),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    toast('success', 'Deleted', 'Chapter removed.');
+    if (currentLesson?.chapterId === chapterId) {
+      currentLesson = null;
+      document.getElementById('content-panel').innerHTML = `
+        <div class="empty-state-editor">
+          <div class="empty-state-icon">🎯</div>
+          <h3>Select a lesson</h3>
+        </div>`;
     }
+    await loadCourse();
+  } catch (err) { toast('error', 'Delete failed', err.message); }
+}
 
-    const headerEl = e.target.closest('.tree-chapter-header');
-    if (headerEl && tree.contains(headerEl)) {
-      toggleChapter(headerEl);
-      return;
+async function deleteLesson(chapterId, lessonId) {
+  closeModal('modal-confirm-delete');
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}/chapters/${chapterId}/lessons/${lessonId}`, {
+      method: 'DELETE', headers: authHeaders(),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    toast('success', 'Deleted', 'Lesson removed.');
+    if (currentLesson?.lessonId === lessonId) {
+      currentLesson = null;
+      document.getElementById('content-panel').innerHTML = `
+        <div class="empty-state-editor">
+          <div class="empty-state-icon">🎯</div>
+          <h3>Select a lesson</h3>
+        </div>`;
     }
+    await loadCourse();
+  } catch (err) { toast('error', 'Delete failed', err.message); }
+}
 
-    const addLessonEl = e.target.closest('.tree-add-lesson');
-    if (addLessonEl && tree.contains(addLessonEl)) {
-      addLesson(addLessonEl.dataset.chapterId);
-    }
+// ════════════════════════════════════════════
+//  EDIT COURSE META
+// ════════════════════════════════════════════
+function openEditCourseMeta() {
+  document.getElementById('edit-course-title').value = courseData?.title || '';
+  document.getElementById('edit-course-desc').value  = courseData?.description || '';
+  document.getElementById('edit-course-error').classList.add('hidden');
+  openModal('modal-edit-course');
+}
+
+async function doEditCourseMeta() {
+  const title   = document.getElementById('edit-course-title').value.trim();
+  const desc    = document.getElementById('edit-course-desc').value.trim();
+  const errBox  = document.getElementById('edit-course-error');
+  const btn     = document.getElementById('btn-confirm-edit-course');
+  errBox.classList.add('hidden');
+  if (!title) {
+    errBox.textContent = 'Title is required.';
+    errBox.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const res = await fetch(`/api/courses/${COURSE_ID}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ title, description: desc || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Update failed');
+    courseData.title       = title;
+    courseData.description = desc;
+    updateCourseMeta();
+    toast('success', 'Updated', 'Course info saved.');
+    closeModal('modal-edit-course');
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Changes';
+  }
+}
+
+// ════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Modal close on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) closeModal(overlay.id);
+    });
   });
 
-  tree.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const addLessonEl = e.target.closest('.tree-add-lesson');
-    if (addLessonEl && tree.contains(addLessonEl)) {
-      e.preventDefault();
-      addLesson(addLessonEl.dataset.chapterId);
-    }
+  // Confirm buttons
+  document.getElementById('btn-add-chapter').addEventListener('click', openAddChapterModal);
+  document.getElementById('btn-confirm-add-chapter').addEventListener('click', doAddChapter);
+  document.getElementById('btn-confirm-add-lesson').addEventListener('click', doAddLesson);
+  document.getElementById('btn-confirm-delete').addEventListener('click', () => pendingDeleteFn?.());
+  document.getElementById('btn-confirm-edit-course').addEventListener('click', doEditCourseMeta);
+  document.getElementById('btn-edit-course-meta').addEventListener('click', openEditCourseMeta);
+
+  // Enter key in modals
+  document.getElementById('new-chapter-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doAddChapter();
+  });
+  document.getElementById('new-lesson-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doAddLesson();
   });
 
-  const btnAddChapter = document.getElementById('btn-add-chapter');
-  if (btnAddChapter) btnAddChapter.addEventListener('click', addChapter);
+  // Lesson type picker
+  document.getElementById('lesson-type-picker').addEventListener('click', e => {
+    const btn = e.target.closest('.type-btn');
+    if (!btn) return;
+    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 
-}
+  // Search
+  document.getElementById('lesson-search').addEventListener('input', e => {
+    renderTree(e.target.value);
+  });
 
-document.addEventListener('DOMContentLoaded', initCourseEditor);
+  // Unsaved changes warning
+  window.addEventListener('beforeunload', e => {
+    if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // Load!
+  loadCourse();
+});
 </script>
+
+<style>
+/* ── Editor-specific extra styles ── */
+.sidebar-title-wrap { flex: 1; min-width: 0; }
+.sidebar-subtitle { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.sidebar-search { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.sidebar-search input { width: 100%; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; background: var(--bg); }
+.sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+.sidebar-footer a { text-decoration: none; }
+
+.tree-empty { padding: 24px 16px; text-align: center; color: var(--text-3); font-size: 13px; }
+.tree-empty p { margin-bottom: 12px; }
+
+.tree-chapter-header { display: flex; align-items: center; }
+.tree-chapter-count { font-size: 10px; font-family: var(--font-mono); color: var(--text-4); background: var(--bg); padding: 1px 5px; border-radius: 99px; flex-shrink: 0; }
+.tree-chapter-actions { opacity: 0; transition: opacity 0.15s; margin-left: 4px; }
+.tree-chapter-header:hover .tree-chapter-actions { opacity: 1; }
+.tree-action-btn { border: none; background: none; cursor: pointer; padding: 2px 4px; font-size: 12px; color: var(--text-4); border-radius: 4px; line-height: 1; }
+.tree-action-btn:hover { background: var(--danger-light); color: var(--danger); }
+.tree-lesson .tree-action-btn { opacity: 0; }
+.tree-lesson:hover .tree-action-btn { opacity: 1; }
+
+.drag-handle { font-size: 12px; color: var(--text-4); cursor: grab; padding: 0 4px; flex-shrink: 0; }
+.drag-handle:active { cursor: grabbing; }
+.dragging { opacity: 0.4; }
+.drag-over { outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
+
+.lesson-icon-video { background: var(--primary-light) !important; color: var(--primary) !important; }
+.lesson-icon-quiz  { background: var(--warning-light) !important; color: #92400E !important; }
+.lesson-icon-document { background: var(--success-light) !important; color: var(--success) !important; }
+
+/* Lesson panel */
+.lesson-panel { height: 100%; display: flex; flex-direction: column; }
+.lesson-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.lesson-panel-actions { display: flex; gap: 8px; }
+.lesson-form { flex: 1; overflow-y: auto; }
+
+.video-preview { margin-top: 12px; }
+.video-preview-label { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+
+/* Quiz editor */
+.quiz-question-block {
+  background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px; margin-bottom: 12px;
+}
+.quiz-question-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.quiz-q-num { width: 24px; height: 24px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.quiz-q-text { flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 14px; }
+.quiz-option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.quiz-option-row input[type=radio] { flex-shrink: 0; accent-color: var(--success); cursor: pointer; }
+.quiz-option-input { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.btn-icon-del { border: none; background: none; cursor: pointer; color: var(--text-4); font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+.btn-icon-del:hover { background: var(--danger-light); color: var(--danger); }
+
+/* Lesson type picker */
+.lesson-type-picker { display: flex; gap: 8px; }
+.type-btn { padding: 8px 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: white; cursor: pointer; font-size: 13px; font-weight: 500; font-family: var(--font); color: var(--text-2); transition: var(--trans-fast); }
+.type-btn:hover { border-color: var(--primary); color: var(--primary); }
+.type-btn.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+
+.empty-state-editor { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; color: var(--text-2); gap: 12px; }
+.empty-state-editor h3 { font-size: 20px; font-weight: 700; color: var(--text); }
+.empty-state-editor p { font-size: 14px; color: var(--text-3); }
+</style>
 {% endblock %}

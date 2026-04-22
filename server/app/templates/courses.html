@@ -1,56 +1,265 @@
 {% extends "base.html" %}
-{% block title %}Courses — E-Learning CMS{% endblock %}
+{% block title %}Khóa học — E-Learning CMS{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Course Catalog</h1>
-  <button class="btn btn-primary" id="btn-create-course" style="display:none"
-          onclick="window.location.href='/courses/new'">
-    + New Course
-  </button>
+<div class="courses-page">
+
+  <!-- Hero -->
+  <div class="courses-hero-new">
+    <div>
+      <h1 class="courses-hero-title">Khám phá khóa học</h1>
+      <p class="courses-hero-subtitle">Nâng cao kỹ năng của bạn với các khóa học chất lượng cao</p>
+    </div>
+    <button class="btn btn-primary btn-lg" id="btn-new-course" style="display:none;" onclick="openCreateCourseModal()">
+      <span>+</span> Tạo mới
+    </button>
+  </div>
+
+  <!-- Course list header -->
+  <div class="courses-header-bar">
+    <div>
+      <h2 class="courses-section-title">Tất cả khóa học</h2>
+      <p id="course-count" class="courses-count-label"></p>
+    </div>
+  </div>
+
+  <!-- Course grid -->
+  <div class="course-grid-new" id="course-grid">
+    <!-- Skeleton loading -->
+  </div>
+
 </div>
 
-<div class="course-grid" id="course-grid">
-  <div class="loading">Loading courses...</div>
+<!-- Modal tạo khóa học mới -->
+<div class="modal-overlay" id="modal-create-course" style="display:none;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Tạo khóa học mới</h2>
+      <button class="modal-close" onclick="closeCreateCourseModal()">×</button>
+    </div>
+    
+    <form id="form-create-course" class="modal-body" style="padding: 24px;">
+      <div id="create-error" class="alert alert-error hidden" style="margin-bottom: 16px;"></div>
+
+      <div class="form-group">
+        <label for="course-title">Tiêu đề khóa học</label>
+        <input 
+          type="text" 
+          id="course-title" 
+          placeholder="VD: Python cho người mới bắt đầu" 
+          required 
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="course-desc">Mô tả (tùy chọn)</label>
+        <textarea 
+          id="course-desc" 
+          placeholder="Mô tả ngắn gọn về khóa học này..."
+          style="min-height: 100px;"
+        ></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeCreateCourseModal()">
+          Hủy
+        </button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-course">
+          Tạo khóa học
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function loadCourses() {
-  const grid = document.getElementById('course-grid');
-  try {
-    const res    = await fetch('/api/courses/');
-    const courses = await res.json();
+const CARD_COLORS = ['blue', 'purple', 'cyan', 'warm', 'green', 'indigo'];
 
-    if (courses.length === 0) {
-      grid.innerHTML = '<p class="empty-state">No courses yet.</p>';
-      return;
+// ──── MODAL FUNCTIONS ────────────────────────────
+function openCreateCourseModal() {
+  document.getElementById('modal-create-course').style.display = 'flex';
+  document.getElementById('form-create-course').reset();
+  document.getElementById('create-error').classList.add('hidden');
+}
+
+function closeCreateCourseModal() {
+  document.getElementById('modal-create-course').style.display = 'none';
+  document.getElementById('form-create-course').reset();
+  document.getElementById('create-error').classList.add('hidden');
+}
+
+// ──── FORM SUBMISSION ────────────────────────────
+async function handleCreateCourse() {
+  const title = document.getElementById('course-title').value.trim();
+  const description = document.getElementById('course-desc').value.trim();
+  const errBox = document.getElementById('create-error');
+  const btnEl = document.getElementById('btn-submit-course');
+
+  errBox.classList.add('hidden');
+
+  if (!title) {
+    errBox.textContent = 'Vui lòng nhập tiêu đề khóa học.';
+    errBox.classList.remove('hidden');
+    return;
+  }
+
+  btnEl.disabled = true;
+  btnEl.textContent = 'Đang tạo...';
+
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Vui lòng đăng nhập trước');
     }
 
-    grid.innerHTML = courses.map(c => `
-      <div class="course-card" onclick="window.location.href='/courses/${c.id}'">
-        <h3 class="course-card-title">${c.title}</h3>
-        <p class="course-card-desc">${c.description || 'No description'}</p>
-        <span class="badge">View course</span>
-      </div>
-    `).join('');
+    const res = await fetch('/api/courses/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ 
+        title, 
+        description: description || null 
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.detail || 'Tạo khóa học thất bại');
+    }
+
+    if (typeof toast === 'function') {
+      toast('success', 'Tạo thành công!', `Khóa học "${title}" đã được tạo.`, 1500);
+    }
+    closeCreateCourseModal();
+    
+    // Redirect to course editor
+    setTimeout(() => {
+      window.location.href = `/courses/${data.id}`;
+    }, 800);
+
   } catch (err) {
-    grid.innerHTML = '<p class="error-state">Failed to load courses.</p>';
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+    if (typeof toast === 'function') {
+      toast('error', 'Tạo khóa học thất bại', err.message);
+    }
+    btnEl.disabled = false;
+    btnEl.textContent = 'Tạo khóa học';
   }
 }
 
-// Show "New Course" button only for instructors
-const token = localStorage.getItem('token');
-if (token) {
+// ──── LOAD COURSES ────────────────────────────────
+async function loadCourses() {
+  const grid = document.getElementById('course-grid');
+  if (typeof renderSkeletonCards === 'function') {
+    renderSkeletonCards(grid, 6);
+  }
+
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    if (payload.role === 'instructor') {
-      document.getElementById('btn-create-course').style.display = 'inline-block';
+    const res = await fetch('/api/courses/');
+    if (!res.ok) throw new Error('Không thể tải danh sách khóa học');
+    const courses = await res.json();
+
+    // Update count
+    const countEl = document.getElementById('course-count');
+    if (countEl) {
+      countEl.textContent = courses.length === 0 ? 'Không có khóa học nào' : `${courses.length} khóa học sẵn sàng`;
     }
-  } catch {}
+
+    if (courses.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state-block">
+          <div class="empty-state-icon">📚</div>
+          <h3>Chưa có khóa học nào</h3>
+          <p>Bắt đầu tạo khóa học của bạn để kết nối với học viên.</p>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = courses.map((c, i) => {
+      const chapterCount = (c.chapters || []).length;
+      const lessonCount = (c.chapters || []).reduce((sum, ch) => sum + (ch.lessons || []).length, 0);
+      const colorClass = CARD_COLORS[i % CARD_COLORS.length];
+      return `
+        <div class="course-card-new" onclick="window.location.href='/courses/${c.id}'" style="--card-color: ${i % 6}">
+          <div class="course-card-accent ${colorClass}"></div>
+          <div class="course-card-body-new">
+            <h3 class="course-card-title-new">${escHtml(c.title)}</h3>
+            <p class="course-card-desc-new">${escHtml(c.description || 'Bộ nội dung học tập toàn diện')}</p>
+            <div class="course-card-stats">
+              <span class="stat">📖 ${chapterCount}</span>
+              <span class="stat">🎯 ${lessonCount}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (typeof toast === 'function') {
+      toast('success', 'Tải xong!', `Có ${courses.length} khóa học sẵn sàng.`, 2000);
+    }
+
+  } catch (err) {
+    grid.innerHTML = `
+      <div class="empty-state-block">
+        <div class="empty-state-icon">⚠️</div>
+        <h3>Không thể tải dữ liệu</h3>
+        <p>${escHtml(err.message)}</p>
+        <button class="btn btn-secondary" onclick="loadCourses()" style="margin-top:12px;">Thử lại</button>
+      </div>
+    `;
+    if (typeof toast === 'function') {
+      toast('error', 'Lỗi', err.message);
+    }
+  }
 }
 
-loadCourses();
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ──── DOM READY ─────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Set up modal close on outside click
+  const modal = document.getElementById('modal-create-course');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeCreateCourseModal();
+    });
+  }
+
+  // Set up form submission
+  const form = document.getElementById('form-create-course');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handleCreateCourse();
+    });
+  }
+
+  // Show create button for instructors
+  const token = localStorage.getItem('token');
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role === 'instructor') {
+        const btn = document.getElementById('btn-new-course');
+        if (btn) btn.style.display = 'flex';
+      }
+    } catch {}
+  }
+
+  // Load courses list
+  loadCourses();
+});
 </script>
 {% endblock %}

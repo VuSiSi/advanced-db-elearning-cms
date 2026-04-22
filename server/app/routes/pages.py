@@ -4,6 +4,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.database import get_db
+from app.middleware.auth import get_current_user, TokenData
+from fastapi import Depends
 
 router = APIRouter(tags=["pages"], include_in_schema=False)
 templates = Jinja2Templates(directory="app/templates")
@@ -14,6 +16,11 @@ def _course_from_doc(doc: dict) -> dict:
     return doc
 
 
+@router.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse("courses.html", {"request": request})
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -21,6 +28,12 @@ async def login_page(request: Request):
 
 @router.get("/courses", response_class=HTMLResponse)
 async def courses_page(request: Request):
+    return templates.TemplateResponse("courses.html", {"request": request})
+
+
+@router.get("/courses/new", response_class=HTMLResponse)
+async def new_course_page(request: Request):
+    # Redirect to courses page — modal handles creation
     return templates.TemplateResponse("courses.html", {"request": request})
 
 
@@ -39,3 +52,13 @@ async def course_editor_page(request: Request, course_id: str):
         "course_editor.html",
         {"request": request, "course": course},
     )
+
+
+@router.get("/stats", response_class=HTMLResponse)
+async def stats_page(request: Request):
+    return templates.TemplateResponse("stats.html", {"request": request})
+
+
+@router.get("/my-progress", response_class=HTMLResponse)
+async def my_progress_page(request: Request):
+    return templates.TemplateResponse("courses.html", {"request": request})

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
-from app.models import UserCreate, UserOut, Token
+from app.models import UserCreate, UserOut, Token, LoginRequest
 from app.middleware.auth import hash_password, verify_password, create_access_token
 from app.database import get_db
 from bson import ObjectId
@@ -32,7 +32,7 @@ async def register(user_in: UserCreate):
 
 
 @router.post("/login", response_model=Token)
-async def login(user_in: UserCreate):
+async def login(user_in: LoginRequest):
     db = get_db()
 
     user = await db.users.find_one({"email": user_in.email})

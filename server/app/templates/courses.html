@@ -72,6 +72,55 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-stress-test" style="display:none; z-index: 9999;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title" style="color: var(--danger);">⚠️ System Stress Test ⚠️</h2>
+      <button class="modal-close" onclick="closeStressModal()">×</button>
+    </div>
+    
+    <div class="modal-body">
+      <div class="stress-modal-desc" id="stress-desc">
+        <p><strong>Khởi tạo kịch bản:</strong></p>
+        <p>- Hệ thống sẽ sinh ra N Instructor ảo.</p>
+        <p>- Mỗi Instructor tạo khóa học, upload lessons.</p>
+        <p>- N Student ảo đăng nhập và đẩy liên tục API tiến độ học tập.</p>
+        <p><em id="reading-timer" style="color: var(--danger);">Vui lòng đọc kỹ... (3s)</em></p>
+      </div>
+
+      <form id="form-stress-test" class="hidden">
+        <div id="stress-error" class="alert alert-error hidden"></div>
+        <div id="stress-success" class="alert alert-success hidden"></div>
+
+        <div class="form-group">
+          <label>Số Loop (N)</label>
+          <input type="number" id="stress-loop" min="10" value="50" required />
+          <small style="color: var(--text-3); font-size: 12px; display: block; margin-top: 4px;">
+            Min: 50. Số loop càng cao, hệ thống càng chịu tải nặng. Vui lòng bắt đầu với giá trị nhỏ để quan sát hiệu suất và tránh quá tải.
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label>Database Engine</label>
+          <select id="stress-db">
+            <option value="mongo">MongoDB (Current)</option>
+            <option value="sql" disabled>PostgreSQL (Coming soon)</option>
+          </select>
+        </div>
+
+        <div class="modal-actions" style="justify-content: space-between;">
+          <button type="button" class="btn btn-ghost hidden" id="btn-cleanup" onclick="cleanupStressData()" style="color: var(--warning); border-color: var(--warning);">
+            🧹 Dọn dẹp Data Test
+          </button>
+          <div>
+            <button type="button" class="btn btn-ghost" onclick="closeStressModal()">Hủy</button>
+            <button type="submit" class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);" id="btn-start-stress">🚀 Khởi chạy</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -261,5 +310,99 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load courses list
   loadCourses();
 });
+
+let currentBatchId = null;
+
+function openStressModal() {
+  document.getElementById('modal-stress-test').style.display = 'flex';
+  document.getElementById('form-stress-test').classList.add('hidden');
+  document.getElementById('reading-timer').textContent = 'Vui lòng đọc kỹ... (3s)';
+  document.getElementById('stress-error').classList.add('hidden');
+  document.getElementById('stress-success').classList.add('hidden');
+  document.getElementById('btn-cleanup').classList.add('hidden');
+  
+  // Delay 3 giây ép người dùng đọc
+  let timeLeft = 3;
+  const timer = setInterval(() => {
+    timeLeft -= 1;
+    document.getElementById('reading-timer').textContent = `Vui lòng đọc kỹ... (${timeLeft}s)`;
+    if (timeLeft <= 0) {
+      clearInterval(timer);
+      document.getElementById('reading-timer').textContent = 'Đã hiểu kịch bản. Sẵn sàng cấu hình.';
+      document.getElementById('form-stress-test').classList.remove('hidden');
+    }
+  }, 1000);
+}
+
+function closeStressModal() {
+  document.getElementById('modal-stress-test').style.display = 'none';
+}
+
+document.getElementById('form-stress-test').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const loop = parseInt(document.getElementById('stress-loop').value);
+  const dbType = document.getElementById('stress-db').value;
+  const btn = document.getElementById('btn-start-stress');
+  const errBox = document.getElementById('stress-error');
+  const okBox = document.getElementById('stress-success');
+  
+  if (loop < 10) {
+    errBox.textContent = 'Số loop tối thiểu là 10';
+    errBox.classList.remove('hidden');
+    return;
+  }
+  
+  errBox.classList.add('hidden');
+  okBox.classList.add('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Đang bắn Request...';
+
+  try {
+    const res = await fetch('/api/stress-test/run', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ loops: loop, db_type: dbType })
+    });
+    const data = await res.json();
+    
+    if (!res.ok) throw new Error(data.detail);
+    
+    currentBatchId = data.batch_id;
+    okBox.innerHTML = `Hoàn tất! Thời gian: <b>${data.time_taken}s</b>. Đã sinh ra batch: <code>${currentBatchId}</code>`;
+    okBox.classList.remove('hidden');
+    document.getElementById('btn-cleanup').classList.remove('hidden'); // Hiện nút dọn dẹp
+    loadCourses(); // Render lại UI để thấy data rác (nếu muốn)
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🚀 Khởi chạy';
+  }
+});
+
+async function cleanupStressData() {
+  if (!currentBatchId) return;
+  const btn = document.getElementById('btn-cleanup');
+  btn.textContent = 'Đang dọn dẹp...';
+  
+  try {
+    const res = await fetch('/api/stress-test/cleanup', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ batch_id: currentBatchId })
+    });
+    if (!res.ok) throw new Error("Dọn dẹp thất bại");
+    
+    document.getElementById('stress-success').textContent = 'Đã Soft Delete toàn bộ dữ liệu test an toàn!';
+    btn.classList.add('hidden');
+    currentBatchId = null;
+    loadCourses(); // Render lại UI
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.textContent = '🧹 Dọn dẹp Data Test';
+  }
+}
 </script>
 {% endblock %}

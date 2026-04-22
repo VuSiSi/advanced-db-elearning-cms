@@ -3,10 +3,14 @@ from app.models import CourseCreate, ChapterCreate, LessonCreate, LessonBase
 from app.middleware.auth import get_current_user, require_instructor, require_student, TokenData
 from app.database import get_db
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _course_from_doc(doc: dict) -> dict:
@@ -103,8 +107,8 @@ async def create_course(
         **course_in.model_dump(),
         "instructor_id": token_data.user_id,
         "chapters": [],
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
     }
     result = await db.courses.insert_one(doc)
     doc["id"] = str(result.inserted_id)
@@ -128,7 +132,7 @@ async def update_course(
 
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id},
-        {"$set": {**course_in.model_dump(), "updated_at": datetime.utcnow()}},
+        {"$set": {**course_in.model_dump(), "updated_at": utc_now()}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=403, detail="Course not found or you don't have permission to edit it")
@@ -169,7 +173,7 @@ async def add_chapter(
         {"_id": oid},
         {
             "$push": {"chapters": chapter},
-            "$set": {"updated_at": datetime.utcnow()},
+            "$set": {"updated_at": utc_now()},
         },
     )
     if result.modified_count == 0:
@@ -196,7 +200,7 @@ async def delete_chapter(
         {
             "$set": {
                 "chapters.$[chap].is_deleted": True,
-                "updated_at": datetime.utcnow()
+                "updated_at": utc_now()
             },
         },
     )
@@ -231,7 +235,7 @@ async def add_lesson(
         {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
         {
             "$push": {"chapters.$.lessons": lesson},
-            "$set": {"updated_at": datetime.utcnow()},
+            "$set": {"updated_at": utc_now()},
         },
     )
     if result.matched_count == 0:
@@ -262,7 +266,7 @@ async def update_lesson(
         f"chapters.$[chap].lessons.$[les].{k}": v
         for k, v in lesson_in.model_dump(exclude_unset=True).items()
     }
-    update_fields["updated_at"] = datetime.utcnow()
+    update_fields["updated_at"] = utc_now()
 
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id},
@@ -299,7 +303,7 @@ async def delete_lesson(
         {
             "$set": {
                 "chapters.$[chap].lessons.$[les].is_deleted": True,
-                "updated_at": datetime.utcnow()
+                "updated_at": utc_now()
             }
         },
         array_filters=[
@@ -357,6 +361,6 @@ async def reorder_course(
 
     await db.courses.update_one(
         {"_id": oid},
-        {"$set": {"chapters": chapters, "updated_at": datetime.utcnow()}},
+        {"$set": {"chapters": chapters, "updated_at": utc_now()}},
     )
     return {"message": "Reordered successfully"}

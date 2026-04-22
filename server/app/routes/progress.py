@@ -3,11 +3,15 @@ from app.models import ProgressCreate, LessonCompletion
 from app.middleware.auth import get_current_user, TokenData
 from app.database import get_db
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from typing import Optional
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class LessonCompleteBody(BaseModel):
@@ -74,8 +78,8 @@ async def mark_lesson_complete(
                     {
                         "$set": {
                             "lesson_completions.$.score": body.score,
-                            "lesson_completions.$.completed_at": datetime.utcnow(),
-                            "last_updated": datetime.utcnow(),
+                            "lesson_completions.$.completed_at": utc_now(),
+                            "last_updated": utc_now(),
                         }
                     },
                 )
@@ -85,21 +89,21 @@ async def mark_lesson_complete(
         # Push new completion
         completion = {
             "lesson_id": body.lesson_id,
-            "completed_at": datetime.utcnow(),
+            "completed_at": utc_now(),
             "score": body.score,
         }
         await db.student_progress.update_one(
             {"_id": progress_doc["_id"]},
             {
                 "$push": {"lesson_completions": completion},
-                "$set":  {"last_updated": datetime.utcnow()},
+                "$set":  {"last_updated": utc_now()},
             },
         )
     else:
         # Create new progress document
         completion = {
             "lesson_id": body.lesson_id,
-            "completed_at": datetime.utcnow(),
+            "completed_at": utc_now(),
             "score": body.score,
         }
         new_doc = {
@@ -107,7 +111,7 @@ async def mark_lesson_complete(
             "course_id":  body.course_id,
             "lesson_completions": [completion],
             "overall_progress_pct": 0.0,
-            "last_updated": datetime.utcnow(),
+            "last_updated": utc_now(),
         }
         await db.student_progress.insert_one(new_doc)
 

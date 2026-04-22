@@ -11,6 +11,15 @@ router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 def _course_from_doc(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))
+
+    if "chapters" in doc:
+        active_chapters = []
+        for ch in doc["chapters"]:
+            if not ch.get("is_deleted"):
+                ch["lessons"] = [ls for ls in ch.get("lessons", []) if not ls.get("is_deleted")]
+                active_chapters.append(ch)
+        doc["chapters"] = active_chapters
+
     return doc
 
 
@@ -185,8 +194,10 @@ async def delete_chapter(
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id},
         {
-            "$pull": {"chapters": {"chapter_id": chapter_id}},
-            "$set": {"updated_at": datetime.utcnow()},
+            "$set": {
+                "chapters.$[chap].is_deleted": True,
+                "updated_at": datetime.utcnow()
+            },
         },
     )
     if result.matched_count == 0:
@@ -286,9 +297,15 @@ async def delete_lesson(
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
         {
-            "$pull": {"chapters.$.lessons": {"lesson_id": lesson_id}},
-            "$set": {"updated_at": datetime.utcnow()},
+            "$set": {
+                "chapters.$[chap].lessons.$[les].is_deleted": True,
+                "updated_at": datetime.utcnow()
+            }
         },
+        array_filters=[
+            {"chap.chapter_id": chapter_id},
+            {"les.lesson_id": lesson_id},
+        ],
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=403, detail="Course not found or you don't have permission")

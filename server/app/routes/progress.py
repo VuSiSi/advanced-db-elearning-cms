@@ -180,10 +180,10 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    total = sum(
-        len(ch.get("lessons", []))
-        for ch in course.get("chapters", [])
-    )
+    total = 0
+    for ch in course.get("chapters", []):
+        if not ch.get("is_deleted"):
+            total += len([ls for ls in ch.get("lessons", []) if not ls.get("is_deleted")])
 
     # Aggregation pipeline — filter out noise values like "V", "", None
     pipeline = [
@@ -247,7 +247,10 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
 
 
 async def _recalculate_progress(db, student_id: str, course_id: str, course: dict):
-    total = sum(len(ch.get("lessons", [])) for ch in course.get("chapters", []))
+    total = 0
+    for ch in course.get("chapters", []):
+        if not ch.get("is_deleted"):
+            total += len([ls for ls in ch.get("lessons", []) if not ls.get("is_deleted")])
     progress_doc = await db.student_progress.find_one({
         "student_id": student_id, "course_id": course_id
     })

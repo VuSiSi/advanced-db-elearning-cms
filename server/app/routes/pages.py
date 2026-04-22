@@ -11,6 +11,15 @@ templates = Jinja2Templates(directory="app/templates")
 
 def _course_from_doc(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))
+
+    if "chapters" in doc:
+        active_chapters = []
+        for ch in doc["chapters"]:
+            if not ch.get("is_deleted"):
+                ch["lessons"] = [ls for ls in ch.get("lessons", []) if not ls.get("is_deleted")]
+                active_chapters.append(ch)
+        doc["chapters"] = active_chapters
+
     return doc
 
 

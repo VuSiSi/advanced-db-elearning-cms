@@ -35,7 +35,11 @@ async def get_course_stats(
     # Build flat lesson list
     all_lessons = []
     for ch in course.get("chapters", []):
+        if ch.get("is_deleted"): 
+            continue
         for ls in ch.get("lessons", []):
+            if ls.get("is_deleted"): 
+                continue
             all_lessons.append(ls)
     total_lessons = len(all_lessons)
 

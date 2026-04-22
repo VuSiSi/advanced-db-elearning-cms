@@ -12,13 +12,11 @@ class LessonBase(BaseModel):
     title: str
     order: int
     type: Literal["video", "quiz", "document"]
-    # video fields
     video_url: Optional[str] = None
     duration_seconds: Optional[int] = None
-    # document fields
     content: Optional[str] = None
-    # quiz fields
     questions: Optional[List[QuizQuestion]] = None
+    is_deleted: bool = False
 
 
 class LessonCreate(LessonBase):
@@ -35,6 +33,7 @@ class Lesson(LessonBase):
 class ChapterBase(BaseModel):
     title: str
     order: int
+    is_deleted: bool = False
 
 class ChapterCreate(ChapterBase):
     pass
@@ -47,6 +46,7 @@ class Chapter(ChapterBase):
 class CourseBase(BaseModel):
     title: str
     description: Optional[str] = None
+    is_deleted: bool = False
 
 class CourseCreate(CourseBase):
     pass

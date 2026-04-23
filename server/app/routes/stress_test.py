@@ -11,9 +11,15 @@ router = APIRouter(prefix="/api/stress-test", tags=["stress-test"])
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
+# ─── KIỂM TRA ROUTER HOẠT ĐỘNG ──────────────────────────────
+@router.get("/")
+async def stress_test_root():
+    """Kiểm tra xem module stress test đã được kết nối thành công chưa."""
+    return {"message": "Stress test API is working! Welcome."}
 
 # ─── GENERATE TEST DATA ─────────────────────────────────────
-@router.post("/generate-courses")
+# Đổi thành api_route để hỗ trợ cả GET (dùng trên trình duyệt) và POST
+@router.api_route("/generate-courses", methods=["GET", "POST"])
 async def generate_test_courses(count: int = 10):
     """Generate N test courses with chapters and lessons for stress testing."""
     if count > 100:
@@ -103,7 +109,7 @@ async def concurrent_reads(num_tasks: int = 10):
 
 
 # ─── CONCURRENT WRITE TEST ─────────────────────────────────
-@router.post("/concurrent-writes")
+@router.api_route("/concurrent-writes", methods=["GET", "POST"])
 async def concurrent_writes(num_tasks: int = 10):
     """Simulate concurrent write operations."""
     if num_tasks > 50:
@@ -188,7 +194,7 @@ async def query_performance():
 
 
 # ─── CLEANUP TEST DATA ──────────────────────────────────────
-@router.delete("/cleanup")
+@router.api_route("/cleanup", methods=["GET", "DELETE"])
 async def cleanup_test_data(instructor_id: str):
     """Delete all test courses by instructor ID."""
     db = get_db()

@@ -38,12 +38,18 @@ function initNavbar() {
   }
 
   if (role === 'instructor') {
-    navLinks.innerHTML = `
+    // Only render Stress Test button if at course view
+    const isCoursesPage = window.location.pathname === '/courses';
+    const stressBtnHTML = isCoursesPage ? `
       <button class="btn-stress" onclick="openStressModal()" onmouseenter="startStressEffect(this)" onmouseleave="stopStressEffect(this)">        
         <span class="stress-icon">⚠️</span>
         <span class="stress-text">sTrEsS tEsT</span>
         <span class="stress-icon">⚠️</span>
       </button>
+    ` : '';
+
+    navLinks.innerHTML = `
+      ${stressBtnHTML}
       <a href="/courses">Courses</a>
       <a href="/courses/new">+ New Course</a>
       <a href="#" id="logout-btn">Logout</a>

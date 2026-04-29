@@ -1,3 +1,25 @@
+(function checkAuthAndRedirect() {
+  const path = window.location.pathname;
+  const token = localStorage.getItem('token');
+
+  // If the user accesses the root directory localhost (/)
+  if (path === '/') {
+    if (!token) {
+      // 
+      window.location.replace('/login'); 
+    } else {
+      // 2. Has login session -> go to courses list page
+      window.location.replace('/courses');
+    }
+  }
+
+  // Additional security option: Force redirect to login if not logged in but trying to access sensitive pages
+  const protectedPaths = ['/courses/new', '/edit', '/analytics', '/my-progress'];
+  if (!token && protectedPaths.some(p => path.includes(p))) {
+    window.location.replace('/login');
+  }
+})();
+
 // ===== INIT NAVBAR =====
 document.addEventListener('DOMContentLoaded', initNavbar);
 
@@ -78,23 +100,23 @@ function authHeaders() {
   };
 }
 
-// ── HIỆU ỨNG GLITCH ĐIỆN TÂM ĐỒ CHO NÚT STRESS TEST ──
+// ── GLITCH EFFECT FOR STRESS TEST BUTTON ──
 let stressGlitchInterval = null;
 
 function startStressEffect(btn) {
   const textEl = btn.querySelector('.stress-text');
-  const baseText = "stress test"; // Chữ gốc
+  const baseText = "stress test"; // Original text
   
-  // Xóa interval cũ nếu có (tránh lỗi spam hover)
+  // Clear old interval if exists (avoid spam hover error)
   if (stressGlitchInterval) clearInterval(stressGlitchInterval);
   
   stressGlitchInterval = setInterval(() => {
     textEl.textContent = baseText.split('').map(char => {
-      if (char === ' ') return ' '; // Giữ nguyên dấu cách
-      // Tỷ lệ 50-50 lật hoa/thường cho từng chữ cái
+      if (char === ' ') return ' '; // Keep space as is
+      // 50-50 chance to flip upper/lower case for each letter
       return Math.random() > 0.5 ? char.toUpperCase() : char.toLowerCase();
     }).join('');
-  }, 80); // 80ms: tốc độ giật khung hình
+  }, 80); // 80ms: frame glitch speed
 }
 
 function stopStressEffect(btn) {
@@ -102,6 +124,6 @@ function stopStressEffect(btn) {
     clearInterval(stressGlitchInterval);
     stressGlitchInterval = null;
   }
-  // Trả về trạng thái chờ mặc định
+  // Return to default waiting state
   btn.querySelector('.stress-text').textContent = "sTrEsS tEsT";
 }

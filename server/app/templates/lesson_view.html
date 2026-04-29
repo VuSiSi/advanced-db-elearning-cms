@@ -174,31 +174,47 @@
         <div class="lv-quiz-form" id="quiz-form">
           {% if lesson.questions %}
             {% for q in lesson.questions %}
-              <div class="lv-question" id="q-{{ loop.index0 }}" data-correct="{{ q.correct_index }}">
-                <div class="lv-question-header">
-                  <span class="lv-q-num">{{ loop.index }}</span>
-                  <p class="lv-q-text">{{ q.question }}</p>
+              
+              {# Lưu chỉ số của câu hỏi vào biến q_idx để dùng cho các input bên trong #}
+              {% set q_idx = loop.index0 %}
+              
+              {# Xử lý mảng đáp án đúng để truyền xuống Javascript #}
+              {% set c_indices = q.correct_indices if q.correct_indices else ([q.correct_index] if q.correct_index is not none else []) %}
+              
+              <div class="lv-question" id="q-{{ q_idx }}" data-correct='{{ c_indices | tojson | forceescape }}' data-qtype="{{ q.qtype | default('single') }}">
+                
+                <div class="lv-question-header" style="display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: flex-start; gap: 10px;">
+                    <span class="lv-q-num">{{ loop.index }}</span>
+                    <p class="lv-q-text" style="margin: 0;">{{ q.question }}</p>
+                  </div>
+                  <button type="button" class="lv-btn-clear" onclick="clearSelection({{ q_idx }})" 
+                    style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 11px; color: var(--text-3); cursor: pointer; transition: 0.2s;">
+                    Xóa lựa chọn
+                  </button>
                 </div>
-                <ul class="lv-options" role="radiogroup" aria-label="Options for question {{ loop.index }}">
+
+                <ul class="lv-options" role="radiogroup" aria-label="Lựa chọn cho câu hỏi {{ loop.index }}">
                   {% for opt in q.options %}
                     <li>
                       <label class="lv-option" data-idx="{{ loop.index0 }}">
-                        <input type="radio"
-                               name="q{{ loop.index0 }}_{{ loop.index0 }}"
-                               value="{{ loop.index0 }}"
-                               class="lv-option-input"
-                               aria-label="{{ opt }}" />
+                        {# Sử dụng q_idx để gom nhóm (name) các radio/checkbox theo từng câu hỏi #}
+                        <input type="{{ 'checkbox' if q.qtype == 'multiple' else 'radio' }}"
+                              name="q_{{ q_idx }}"
+                              value="{{ loop.index0 }}"
+                              class="lv-option-input"
+                              aria-label="{{ opt }}" />
                         <span class="lv-option-marker"></span>
                         <span class="lv-option-text">{{ opt }}</span>
                       </label>
                     </li>
                   {% endfor %}
                 </ul>
-                <div class="lv-q-feedback hidden" id="qfb-{{ loop.index0 }}"></div>
+                <div class="lv-q-feedback hidden" id="qfb-{{ q_idx }}"></div>
               </div>
             {% endfor %}
           {% else %}
-            <p class="lv-empty-content">No questions available yet.</p>
+            <p class="lv-empty-content">Chưa có câu hỏi nào.</p>
           {% endif %}
 
           <div class="lv-quiz-footer">
@@ -280,10 +296,8 @@ function setupNavButtons() {
   if (idx < lessonOrder.length - 1) {
     btnNext.addEventListener('click', () => navigateLesson(lessonOrder[idx + 1]));
   } else {
-    btnNext.textContent = '🎉 Finish Course';
-    btnNext.addEventListener('click', () => {
-      window.location.href = '/courses';
-    });
+    // Hide the next button on the last lesson (Instructor handles course completion)
+    btnNext.style.display = 'none';
   }
 }
 
@@ -446,8 +460,15 @@ function showCompletedState() {
   if (msg) msg.classList.remove('hidden');
 }
 
+/// Function to clear radio/checkbox selections for a specific question
+function clearSelection(qi) {
+  const qEl = document.getElementById(`q-${qi}`);
+  if (!qEl) return;
+  qEl.querySelectorAll('.lv-option-input').forEach(inp => inp.checked = false);
+}
+
 // ═══════════════════════════════════════════
-//  QUIZ SUBMIT
+//  QUIZ SUBMIT (Updated for Single/Multiple)
 // ═══════════════════════════════════════════
 function setupQuizSubmit() {
   const btn = document.getElementById('btn-submit-quiz');
@@ -459,59 +480,70 @@ function setupQuizSubmit() {
 
     let answered = 0;
     questions.forEach(qEl => {
-      const checked = qEl.querySelector('.lv-option-input:checked');
-      if (checked) answered++;
+      if (qEl.querySelectorAll('.lv-option-input:checked').length > 0) answered++;
     });
 
     if (answered < questions.length) {
-      alert(`Please answer all ${questions.length} questions before submitting.`);
+      alert(`Vui lòng trả lời đủ ${questions.length} câu hỏi trước khi nộp bài.`);
       return;
     }
 
     btn.disabled = true;
-    btn.textContent = 'Submitting...';
+    btn.textContent = 'Đang chấm điểm...';
 
-    let correct = 0;
+    let correctCount = 0;
     const total = questions.length;
 
     questions.forEach((qEl, i) => {
-      const correctIdx = parseInt(qEl.dataset.correct, 10);
-      const selectedInput = qEl.querySelector('.lv-option-input:checked');
-      const selectedIdx = selectedInput ? parseInt(selectedInput.value, 10) : -1;
-      const isCorrect = selectedIdx === correctIdx;
-      if (isCorrect) correct++;
+      let correctIndices = [];
+      try {
+        correctIndices = JSON.parse(qEl.dataset.correct || "[]");
+      } catch(e) {
+        console.error("Lỗi parse đáp án:", e);
+      }
+      
+      const selectedInputs = Array.from(qEl.querySelectorAll('.lv-option-input:checked'));
+      const selectedIndices = selectedInputs.map(inp => parseInt(inp.value, 10));
 
-      // Highlight options
+      const isCorrect = (correctIndices.length === selectedIndices.length) && 
+                        correctIndices.every(val => selectedIndices.includes(val));
+
+      if (isCorrect) correctCount++;
+
       qEl.querySelectorAll('.lv-option').forEach((optEl, optIdx) => {
         optEl.classList.remove('correct', 'wrong', 'missed');
-        if (optIdx === correctIdx) optEl.classList.add('correct');
-        else if (optIdx === selectedIdx && !isCorrect) optEl.classList.add('wrong');
+        const isOptCorrect = correctIndices.includes(optIdx);
+        const isOptSelected = selectedIndices.includes(optIdx);
+
+        if (isOptCorrect) optEl.classList.add('correct');
+        else if (isOptSelected && !isOptCorrect) optEl.classList.add('wrong');
+
         optEl.querySelector('.lv-option-input').disabled = true;
       });
 
-      // Feedback
       const fb = document.getElementById(`qfb-${i}`);
       if (fb) {
-        fb.textContent = isCorrect ? '✓ Correct!' : `✗ The correct answer was option ${correctIdx + 1}.`;
+        fb.classList.remove('hidden');
+        const answerText = correctIndices.map(idx => idx + 1).join(', ');
+        fb.textContent = isCorrect ? '✓ Chính xác!' : `✗ Sai rồi. Đáp án đúng là: ${answerText}`;
         fb.className = `lv-q-feedback ${isCorrect ? 'lv-fb-correct' : 'lv-fb-wrong'}`;
       }
     });
 
-    const score = Math.round((correct / total) * 100);
-
-    // Show result banner
+    const score = Math.round((correctCount / total) * 100);
     const resultEl = document.getElementById('quiz-result');
     const scoreEl = document.getElementById('result-score');
     const labelEl = document.getElementById('result-label');
+    
     if (resultEl && scoreEl && labelEl) {
-      scoreEl.textContent = `${correct} / ${total}`;
-      labelEl.textContent = score >= 70 ? '🎉 Passed!' : 'Keep trying!';
+      resultEl.classList.remove('hidden');
+      scoreEl.textContent = `${correctCount} / ${total}`;
+      labelEl.textContent = score >= 70 ? 'Đạt yêu cầu' : 'Chưa đạt yêu cầu';
       resultEl.className = `lv-quiz-result ${score >= 70 ? 'pass' : 'fail'}`;
     }
 
-    btn.textContent = 'Submitted';
+    btn.textContent = 'Đã nộp bài';
 
-    // Send to API (score stored as percentage)
     const lessonId = btn.dataset.lessonId;
     const courseId = btn.dataset.courseId;
     if (lessonId && courseId) {

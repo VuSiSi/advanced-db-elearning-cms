@@ -601,10 +601,10 @@ function renderLessonPanel(meta, chapterId) {
         <div class="lesson-panel-actions">
           <button class="btn btn-ghost btn-sm" id="btn-preview"
             onclick="previewLesson('${esc(meta.lesson_id)}')" title="Open student view in new tab">
-            👁 Preview
+            Preview
           </button>
           <button class="btn btn-primary btn-sm" id="btn-save-lesson" onclick="saveLesson()">
-            💾 Save
+            Save
           </button>
         </div>
       </div>
@@ -663,11 +663,11 @@ function renderQuestionEditor(q, qi) {
         <div class="lesson-type-picker">
           <button type="button" class="type-btn qtype-btn ${qtype === 'single' ? 'active' : ''}" 
             data-type="single" onclick="changeQuestionType(${qi}, 'single', this)">
-            ◯ Một đáp án (Radio Button)
+            Một đáp án (Radio Button)
           </button>
           <button type="button" class="type-btn qtype-btn ${qtype === 'multiple' ? 'active' : ''}" 
             data-type="multiple" onclick="changeQuestionType(${qi}, 'multiple', this)">
-            ☑ Nhiều đáp án (Checkbox)
+            Nhiều đáp án (Checkbox)
           </button>
         </div>
       </div>
@@ -853,7 +853,7 @@ async function saveLesson() {
   } catch (err) {
     toast('error', 'Save failed', err.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Save'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Save'; }
   }
 }
 

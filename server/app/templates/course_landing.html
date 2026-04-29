@@ -14,7 +14,7 @@
 {% block scripts %}
 <script>
 const COURSE_ID = "{{ course.id if course else '' }}";
-const CHAPTERS  = {{ (course.chapters | tojson) if course else [] }};
+const CHAPTERS = JSON.parse('{{ chapters | tojson | safe }}');
 
 (function routeByRole() {
   const token = localStorage.getItem('token');

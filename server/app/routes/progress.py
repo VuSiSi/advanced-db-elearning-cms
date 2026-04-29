@@ -36,6 +36,9 @@ async def mark_lesson_complete(
     if token_data.role not in ["student", "instructor"]:
         raise HTTPException(status_code=403, detail="Access required (403 Forbidden)")
     
+    if token_data.role == "instructor":
+        return {"message": "Preview mode: Lesson marked complete (Not saved)", "already_done": False}
+    
     db = get_db()
     student_id = token_data.user_id
 

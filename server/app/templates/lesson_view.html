@@ -179,7 +179,7 @@
               {% set q_idx = loop.index0 %}
               
               {# Xử lý mảng đáp án đúng để truyền xuống Javascript #}
-              {% set c_indices = q.correct_indices if q.correct_indices else ([q.correct_index] if q.correct_index is not none else []) %}
+              {% set c_indices = q.get('correct_indices') if q.get('correct_indices') else ([q.get('correct_index')] if q.get('correct_index') is not none else []) %}
               
               <div class="lv-question" id="q-{{ q_idx }}" data-correct='{{ c_indices | tojson | forceescape }}' data-qtype="{{ q.qtype | default('single') }}">
                 

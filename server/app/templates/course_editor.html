@@ -831,6 +831,22 @@ async function saveLesson() {
 
     } else if (type === 'quiz') {
       payload.questions = collectQuizQuestions();
+      
+      for (let i = 0; i < payload.questions.length; i++) {
+        const q = payload.questions[i];
+        
+        if (!q.question.trim()) {
+          toast('warning', 'Lỗi khi lưu Quiz', `Nội dung của câu hỏi số ${i + 1} đang bị bỏ trống.`);
+          if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+          return;
+        }
+        
+        if (!q.correct_indices || q.correct_indices.length === 0) {
+          toast('warning', 'Lỗi khi lưu Quiz', `Câu hỏi số ${i + 1} chưa có lựa chọn nào được đánh dấu là đúng! Vui lòng tích chọn ít nhất 1 đáp án.`);
+          if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+          return;
+        }
+      }
     }
 
     btn.textContent = 'Saving Metadata...';

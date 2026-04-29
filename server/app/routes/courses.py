@@ -60,14 +60,14 @@ async def get_course(course_id: str, token_data: TokenData = Depends(get_current
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
     
     # Authorization: instructor can only see own course
     if token_data.role == "instructor" and doc.get("instructor_id") != token_data.user_id:
-        raise HTTPException(status_code=403, detail="You can only view your own courses")
+        raise HTTPException(status_code=403, detail="You can only view your own courses (403 Forbidden)")
     
     return _course_from_doc(doc)
 
@@ -80,20 +80,20 @@ async def get_lesson(course_id: str, lesson_id: str, token_data: TokenData = Dep
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
     
     # Authorization: instructor can only see their own course lessons
     if token_data.role == "instructor" and doc.get("instructor_id") != token_data.user_id:
-        raise HTTPException(status_code=403, detail="You can only view your own course lessons")
+        raise HTTPException(status_code=403, detail="You can only view your own course lessons (403 Forbidden)")
     
     for chapter in doc.get("chapters", []):
         for lesson in chapter.get("lessons", []):
             if lesson.get("lesson_id") == lesson_id:
                 return lesson
-    raise HTTPException(status_code=404, detail="Lesson not found")
+    raise HTTPException(status_code=404, detail="Lesson not found (404 Not Found)")
 
 
 # ─── CREATE COURSE ─────────────────────────────────────────
@@ -128,14 +128,14 @@ async def update_course(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id},
         {"$set": {**course_in.model_dump(), "updated_at": utc_now()}},
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission to edit it")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission to edit it (403 Forbidden)")
     return {"message": "Course updated"}
 
 
@@ -151,7 +151,7 @@ async def add_chapter(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     # Get current chapters count and verify ownership
     doc = await db.courses.find_one(
@@ -159,7 +159,7 @@ async def add_chapter(
         {"chapters": 1}
     )
     if not doc:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission to edit it")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission to edit it (403 Forbidden)")
 
     order = len(doc.get("chapters", []))
     chapter = {
@@ -177,7 +177,7 @@ async def add_chapter(
         },
     )
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
     return {"chapter_id": chapter["chapter_id"], "message": "Chapter added"}
 
 
@@ -193,7 +193,7 @@ async def delete_chapter(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id},
@@ -205,9 +205,9 @@ async def delete_chapter(
         },
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Chapter not found")
+        raise HTTPException(status_code=404, detail="Chapter not found (404 Not Found)")
     return {"message": "Chapter deleted"}
 
 
@@ -224,7 +224,7 @@ async def add_lesson(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     lesson = {
         "lesson_id": str(uuid.uuid4()),
@@ -239,9 +239,9 @@ async def add_lesson(
         },
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Chapter not found")
+        raise HTTPException(status_code=404, detail="Chapter not found (404 Not Found)")
     return {"lesson_id": lesson["lesson_id"], "message": "Lesson added"}
 
 
@@ -259,7 +259,7 @@ async def update_lesson(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     # Build the $set payload for the specific nested lesson
     update_fields = {
@@ -277,9 +277,9 @@ async def update_lesson(
         ],
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Lesson not found")
+        raise HTTPException(status_code=404, detail="Lesson not found (404 Not Found)")
     return {"message": "Lesson updated"}
 
 
@@ -296,7 +296,7 @@ async def delete_lesson(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
@@ -312,9 +312,9 @@ async def delete_lesson(
         ],
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Lesson not found")
+        raise HTTPException(status_code=404, detail="Lesson not found (404 Not Found)")
     return {"message": "Lesson deleted"}
 
 
@@ -336,13 +336,13 @@ async def reorder_course(
     try:
         oid = ObjectId(course_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     doc = await db.courses.find_one(
         {"_id": oid, "instructor_id": token_data.user_id}
     )
     if not doc:
-        raise HTTPException(status_code=403, detail="Course not found or you don't have permission")
+        raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
 
     chapters = doc.get("chapters", [])
 

@@ -23,7 +23,7 @@ async def stress_test_root():
 async def generate_test_courses(count: int = 10):
     """Generate N test courses with chapters and lessons for stress testing."""
     if count > 100:
-        raise HTTPException(status_code=400, detail="Maximum 100 courses at once")
+        raise HTTPException(status_code=400, detail="Maximum 100 courses at once (400 Bad Request)")
     
     db = get_db()
     instructor_id = str(uuid.uuid4())
@@ -84,7 +84,7 @@ async def generate_test_courses(count: int = 10):
 async def concurrent_reads(num_tasks: int = 10):
     """Simulate concurrent read operations."""
     if num_tasks > 100:
-        raise HTTPException(status_code=400, detail="Maximum 100 concurrent tasks")
+        raise HTTPException(status_code=400, detail="Maximum 100 concurrent tasks (400 Bad Request)")
     
     db = get_db()
     
@@ -113,7 +113,7 @@ async def concurrent_reads(num_tasks: int = 10):
 async def concurrent_writes(num_tasks: int = 10):
     """Simulate concurrent write operations."""
     if num_tasks > 50:
-        raise HTTPException(status_code=400, detail="Maximum 50 concurrent tasks")
+        raise HTTPException(status_code=400, detail="Maximum 50 concurrent tasks (400 Bad Request)")
     
     db = get_db()
     instructor_id = str(uuid.uuid4())

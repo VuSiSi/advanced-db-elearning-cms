@@ -25,7 +25,7 @@ async def upload_file(
     if file.content_type.startswith("audio/") or file.filename.lower().endswith(".mp3"):
         raise HTTPException(
             status_code=400, 
-            detail="Không hỗ trợ file thuần âm thanh. Vui lòng tải lên Video hoặc Tài liệu."
+            detail="Không hỗ trợ file thuần âm thanh. Vui lòng tải lên Video hoặc Tài liệu. (400 Bad Request)"
         )
 
     # 2. Tạo tên file duy nhất để tránh bị ghi đè khi upload trùng tên

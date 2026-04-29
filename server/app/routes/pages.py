@@ -55,9 +55,9 @@ async def course_page(request: Request, course_id: str):
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     course = _course_from_doc(doc)
     # We render both templates and let client-side JS decide based on role.
@@ -75,9 +75,9 @@ async def course_editor_page(request: Request, course_id: str):
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     course = _course_from_doc(doc)
     return templates.TemplateResponse(
@@ -93,9 +93,9 @@ async def lesson_view_page(request: Request, course_id: str, lesson_id: str):
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     course = _course_from_doc(doc)
 
@@ -110,7 +110,7 @@ async def lesson_view_page(request: Request, course_id: str, lesson_id: str):
             break
 
     if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
+        raise HTTPException(status_code=404, detail="Lesson not found (404 Not Found)")
 
     return templates.TemplateResponse(
         "lesson_view.html",
@@ -125,9 +125,9 @@ async def analytics_page(request: Request, course_id: str):
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     course = _course_from_doc(doc)
     return templates.TemplateResponse(

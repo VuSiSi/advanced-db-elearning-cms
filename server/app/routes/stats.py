@@ -28,9 +28,9 @@ async def get_course_stats(
     try:
         course = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     # Build flat lesson list
     all_lessons = []

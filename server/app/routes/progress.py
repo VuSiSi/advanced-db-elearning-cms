@@ -30,7 +30,7 @@ async def mark_lesson_complete(
 ):
     """Mark a lesson as complete. Only students can call this."""
     if token_data.role != "student":
-        raise HTTPException(status_code=403, detail="Student access required")
+        raise HTTPException(status_code=403, detail="Student access required (403 Forbidden)")
 
     db = get_db()
     student_id = token_data.user_id
@@ -39,9 +39,9 @@ async def mark_lesson_complete(
     try:
         course = await db.courses.find_one({"_id": ObjectId(body.course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     # Guard: validate lesson exists inside course
     lesson_found = False
@@ -53,7 +53,7 @@ async def mark_lesson_complete(
         if lesson_found:
             break
     if not lesson_found:
-        raise HTTPException(status_code=404, detail="Lesson not found in this course")
+        raise HTTPException(status_code=404, detail="Lesson not found in this course (404 Not Found)")
 
     # Find or create progress document for this student+course
     progress_doc = await db.student_progress.find_one({
@@ -167,7 +167,7 @@ async def get_student_progress_by_id(
     Only instructors can call this.
     """
     if token_data.role != "instructor":
-        raise HTTPException(status_code=403, detail="Instructor access required")
+        raise HTTPException(status_code=403, detail="Instructor access required (403 Forbidden)")
     db = get_db()
     return await _build_progress_response(db, student_id, course_id)
 
@@ -180,9 +180,9 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
     try:
         course = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid course ID")
+        raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
     total = 0
     for ch in course.get("chapters", []):

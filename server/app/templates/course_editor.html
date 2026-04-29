@@ -6,14 +6,19 @@
 
   <!-- ═══ LEFT: Course tree sidebar ═══ -->
   <aside class="editor-sidebar" id="editor-sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-title-wrap">
-        <h2 class="sidebar-title" id="course-title-display">{{ course.title if course else "Loading..." }}</h2>
-        <span class="sidebar-subtitle" id="course-meta-display"></span>
+    <div class="sidebar-header" style="display: block;">
+      <a href="/courses" style="font-size: 12px; color: var(--text-3); text-decoration: none; display: inline-block; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-3)'">
+        ← Quay lại danh sách khóa học
+      </a>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div class="sidebar-title-wrap">
+          <h2 class="sidebar-title" id="course-title-display">{{ course.title if course else "Loading..." }}</h2>
+          <span class="sidebar-subtitle" id="course-meta-display"></span>
+        </div>
+        <button class="btn btn-sm btn-primary" id="btn-add-chapter" type="button">
+          + Chapter
+        </button>
       </div>
-      <button class="btn btn-sm btn-primary" id="btn-add-chapter" type="button">
-        + Chapter
-      </button>
     </div>
 
     <!-- Search box -->
@@ -223,6 +228,21 @@ function setDirty(v) {
   isDirty = v;
   document.title = v ? '● ' + document.title.replace('● ','') : document.title.replace('● ','');
 }
+
+window.addEventListener('click', (e) => {
+  if (!isDirty) return; // If everything is saved, allow normal behavior
+
+  const link = e.target.closest('a');
+  const logoutBtn = e.target.closest('#logout-btn');
+
+  // Check if user clicked a navigation link (not opening in a new tab) or the logout button
+  if ((link && link.href && link.target !== '_blank' && !link.href.includes('#')) || logoutBtn) {
+    e.preventDefault();   // Prevent browser from navigating
+    e.stopPropagation();  // Prevent app.js from logging out
+    
+    toast('warning', 'Unsaved Changes', 'Bạn đang có thay đổi chưa lưu! Vui lòng lưu lại (Save) trước khi thoát khỏi trình chỉnh sửa.', 4000);
+  }
+}, true); // 'true' enables the capture phase, catching the click BEFORE other scripts do
 
 // ════════════════════════════════════════════
 //  MODALS
@@ -616,26 +636,45 @@ function validateVideoUpload(input) {
 }
 
 function renderQuestionEditor(q, qi) {
+  const qtype = q.qtype || 'single';
+  const indices = q.correct_indices?.length ? q.correct_indices : (q.correct_index !== undefined && q.correct_index !== null ? [q.correct_index] : []);
+  const inputType = qtype === 'multiple' ? 'checkbox' : 'radio';
+
   const opts = (q.options || ['', '', '']).map((opt, oi) => `
     <div class="quiz-option-row">
-      <input type="radio" name="correct-${qi}" value="${oi}"
-        ${q.correct_index === oi ? 'checked' : ''} title="Mark as correct" />
+      <input type="${inputType}" name="correct-${qi}" value="${oi}"
+        ${indices.includes(oi) ? 'checked' : ''} title="Đánh dấu đáp án đúng" />
       <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}"
-        value="${esc(opt)}" placeholder="Option ${oi+1}" />
-      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove option">×</button>
+        value="${esc(opt)}" placeholder="Lựa chọn ${oi+1}" />
+      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Xóa lựa chọn">×</button>
     </div>`).join('');
 
   return `
-    <div class="quiz-question-block" data-qi="${qi}" id="qq-${qi}">
+    <div class="quiz-question-block" data-qi="${qi}" id="qq-${qi}" data-qtype="${qtype}">
       <div class="quiz-question-header">
         <span class="quiz-q-num">Q${qi+1}</span>
         <input type="text" class="quiz-q-text" data-qi="${qi}"
-          value="${esc(q.question||'')}" placeholder="Question text..." />
-        <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Delete question">🗑</button>
+          value="${esc(q.question||'')}" placeholder="Nhập nội dung câu hỏi..." />
+        <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Xóa câu hỏi">🗑</button>
       </div>
+
+      <div class="quiz-qtype-picker-wrapper">
+        <label class="quiz-label-sm">Loại câu hỏi:</label>
+        <div class="lesson-type-picker">
+          <button type="button" class="type-btn qtype-btn ${qtype === 'single' ? 'active' : ''}" 
+            data-type="single" onclick="changeQuestionType(${qi}, 'single', this)">
+            ◯ Một đáp án (Radio Button)
+          </button>
+          <button type="button" class="type-btn qtype-btn ${qtype === 'multiple' ? 'active' : ''}" 
+            data-type="multiple" onclick="changeQuestionType(${qi}, 'multiple', this)">
+            ☑ Nhiều đáp án (Checkbox)
+          </button>
+        </div>
+      </div>
+
       <div class="quiz-options-list" id="opts-${qi}">${opts}</div>
       <button type="button" class="btn btn-ghost btn-xs" onclick="addOption(${qi})"
-        style="margin-top:6px;">+ Option</button>
+        style="margin-top:6px;">+ Thêm lựa chọn</button>
     </div>`;
 }
 
@@ -676,16 +715,41 @@ function removeQuestion(qi) {
 
 function addOption(qi) {
   const list = document.getElementById(`opts-${qi}`);
-  if (!list) return;
+  const block = document.getElementById(`qq-${qi}`);
+  if (!list || !block) return;
+  const qtype = block.dataset.qtype || 'single';
+  const inputType = qtype === 'multiple' ? 'checkbox' : 'radio';
+  
   const oi = list.querySelectorAll('.quiz-option-row').length;
   const div = document.createElement('div');
   div.innerHTML = `
     <div class="quiz-option-row">
-      <input type="radio" name="correct-${qi}" value="${oi}" title="Mark as correct" />
+      <input type="${inputType}" name="correct-${qi}" value="${oi}" title="Mark as correct" />
       <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}" placeholder="Option ${oi+1}" />
       <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove">×</button>
     </div>`;
   list.appendChild(div.firstElementChild);
+  setDirty(true);
+}
+
+function changeQuestionType(qi, newType, btnEl) {
+  const block = document.getElementById(`qq-${qi}`);
+  if (!block) return;
+  
+  block.dataset.qtype = newType;
+  
+  // Cập nhật giao diện nút bấm
+  block.querySelectorAll('.qtype-btn').forEach(btn => btn.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  
+  const inputType = newType === 'multiple' ? 'checkbox' : 'radio';
+  
+  // Đổi loại input của các lựa chọn
+  block.querySelectorAll('.quiz-option-row input[name^="correct-"]').forEach(inp => {
+    inp.type = inputType;
+    if (newType === 'single') inp.checked = false; // Reset để tránh nhiều radio được chọn
+  });
+  
   setDirty(true);
 }
 
@@ -710,11 +774,18 @@ function collectQuizQuestions() {
   return Array.from(blocks).map((block) => {
     const qi      = parseInt(block.dataset.qi);
     const question = block.querySelector('.quiz-q-text')?.value || '';
+    
+    // Lấy loại câu hỏi từ nút đang active
+    const activeBtn = block.querySelector('.qtype-btn.active');
+    const qtype = activeBtn ? activeBtn.dataset.type : 'single';
+    
     const optInputs = block.querySelectorAll('.quiz-option-input');
     const options   = Array.from(optInputs).map(i => i.value);
-    const checkedRadio = block.querySelector(`input[name="correct-${qi}"]:checked`);
-    const correct_index = checkedRadio ? parseInt(checkedRadio.value) : 0;
-    return { question, options, correct_index };
+    
+    const checkedBoxes = block.querySelectorAll(`input[name="correct-${qi}"]:checked`);
+    const correct_indices = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
+    
+    return { question, options, correct_indices, qtype };
   });
 }
 
@@ -813,6 +884,11 @@ async function uploadFileToServer(file) {
 }
 
 function previewLesson(lessonId) {
+  // Prevent previewing if there are unsaved changes
+  if (isDirty) {
+    toast('warning', 'Unsaved Changes', 'Vui lòng nhấn Save trước khi Preview để thấy nội dung mới nhất.', 4000);
+    return;
+  }
   window.open(`/courses/${COURSE_ID}/lessons/${lessonId}`, '_blank');
 }
 
@@ -1116,6 +1192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 .quiz-question-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .quiz-q-num { width: 24px; height: 24px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .quiz-q-text { flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 14px; }
+.quiz-qtype-select { padding: 5px 8px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; color: var(--text-2); }
 .quiz-option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .quiz-option-row input[type=radio] { flex-shrink: 0; accent-color: var(--success); cursor: pointer; }
 .quiz-option-input { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; }

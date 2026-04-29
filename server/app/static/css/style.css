@@ -1092,3 +1092,33 @@ textarea { resize: vertical; min-height: 120px; }
 .btn-stress:hover .stress-text { 
   opacity: 1; 
 }
+
+/* ── QUIZ EDITOR ── */
+/* Chỉnh lại header để input text chiếm toàn bộ chiều ngang */
+.quiz-question-header { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+  margin-bottom: 15px; 
+}
+.quiz-q-text { 
+  flex: 1; 
+  font-weight: 600;
+}
+
+/* Đưa label và các nút chọn lên cùng một hàng */
+.quiz-qtype-picker-wrapper { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; /* Khoảng cách giữa chữ và nút */
+  margin-bottom: 16px; 
+  padding-left: 34px; 
+}
+
+.quiz-label-sm { 
+  display: block; 
+  font-size: 12px; 
+  color: var(--text-3); 
+  font-weight: 600; 
+}
+

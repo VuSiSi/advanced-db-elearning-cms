@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
-# LESSON  (embedded inside Chapter)
 class QuizQuestion(BaseModel):
     question: str
     options: List[str]
-    correct_index: int
-
+    qtype: Literal["single", "multiple"] = "single"
+    correct_index: Optional[int] = None 
+    correct_indices: List[int] = []
+    
+# LESSON  (embedded inside Chapter)
 class LessonBase(BaseModel):
     title: str
     order: int

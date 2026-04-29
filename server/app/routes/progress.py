@@ -28,10 +28,14 @@ async def mark_lesson_complete(
     body: LessonCompleteBody,
     token_data: TokenData = Depends(get_current_user),
 ):
-    """Mark a lesson as complete. Only students can call this."""
-    if token_data.role != "student":
-        raise HTTPException(status_code=403, detail="Student access required (403 Forbidden)")
-
+    """
+    Mark a lesson as complete. 
+    Students can call this.
+    Instructor can as well call this for testing.
+    """
+    if token_data.role not in ["student", "instructor"]:
+        raise HTTPException(status_code=403, detail="Access required (403 Forbidden)")
+    
     db = get_db()
     student_id = token_data.user_id
 

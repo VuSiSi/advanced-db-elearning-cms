@@ -188,7 +188,7 @@
                     <span class="lv-q-num">{{ loop.index }}</span>
                     <p class="lv-q-text" style="margin: 0;">{{ q.question }}</p>
                   </div>
-                  <button type="button" class="lv-btn-clear" onclick="clearSelection({{ q_idx }})" 
+                  <button type="button" class="lv-btn-clear" onclick="clearSelection('{{ q_idx }}')" 
                     style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 11px; color: var(--text-3); cursor: pointer; transition: 0.2s;">
                     Xóa lựa chọn
                   </button>
@@ -337,7 +337,7 @@ async function loadProgress() {
 
   try {
     const res = await fetch(
-      `/api/progress/${encodeURIComponent(email)}/${encodeURIComponent(COURSE_ID)}`,
+      `/api/progress/${COURSE_ID}`, 
       { headers: { 'Authorization': `Bearer ${token}` } }
     );
     if (!res.ok) return;
@@ -352,6 +352,9 @@ async function loadProgress() {
     // If current lesson is already completed → show completed state
     if (CURRENT_LESSON_ID && completedSet.has(CURRENT_LESSON_ID)) {
       showCompletedState();
+
+      // Disable Clear choice button if the quiz is completed
+      document.querySelectorAll('.lv-btn-clear').forEach(b => b.style.display = 'none');
     }
   } catch (err) {
     console.warn('Failed to load progress:', err);

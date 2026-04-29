@@ -256,6 +256,7 @@
 // ═══════════════════════════════════════════
 const COURSE_ID = "{{ course.id if course else '' }}";
 const CURRENT_LESSON_ID = "{{ lesson.lesson_id if lesson else '' }}";
+const TARGET_DURATION = {{ lesson.duration_seconds or 0 }};
 
 // Map lessonId → true/false  (loaded from API)
 let completedSet = new Set();
@@ -272,6 +273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupCompleteButton();
   setupQuizSubmit();
   setupChapterToggles();
+  setupVideoAutoProgress();
   await loadProgress();
 });
 
@@ -468,6 +470,31 @@ function clearSelection(qi) {
   const qEl = document.getElementById(`q-${qi}`);
   if (!qEl) return;
   qEl.querySelectorAll('.lv-option-input').forEach(inp => inp.checked = false);
+}
+
+// ═══════════════════════════════════════════
+//  VIDEO AUTO PROGRESS
+// ═══════════════════════════════════════════
+function setupVideoAutoProgress() {
+  const video = document.querySelector('.lv-video');
+  
+  // Chỉ chạy nếu bài học là video có định dạng mp4/webm và thời gian yêu cầu > 0
+  if (!video || TARGET_DURATION <= 0) return;
+
+  let isTriggered = false;
+
+  video.addEventListener('timeupdate', () => {
+    // Nếu chưa kích hoạt + bài học chưa hoàn thành + thời gian xem >= thời lượng yêu cầu
+    if (!isTriggered && !completedSet.has(CURRENT_LESSON_ID) && video.currentTime >= TARGET_DURATION) {
+      isTriggered = true; 
+      
+      const btnComplete = document.getElementById('btn-complete');
+      if (btnComplete) {
+        // Tự động "bấm" nút hoàn thành để UI cập nhật (nút chuyển xám, đổi text)
+        btnComplete.click();
+      }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════

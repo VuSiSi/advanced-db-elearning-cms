@@ -169,6 +169,23 @@ let pendingDeleteFn = null; // fn to call on confirm delete
 let pendingAddLessonChapterId = null;
 let isDirty = false;        // unsaved changes flag
 
+let discardPromiseResolve = null;
+
+function confirmDiscardModal() {
+  document.getElementById('modal-confirm-discard').style.display = 'flex';
+  return new Promise((resolve) => {
+    discardPromiseResolve = resolve;
+  });
+}
+
+function resolveDiscard(choice) {
+  document.getElementById('modal-confirm-discard').style.display = 'none';
+  if (discardPromiseResolve) {
+    discardPromiseResolve(choice);
+    discardPromiseResolve = null;
+  }
+}
+
 // ── Drag state ──
 let dragEl = null, dragOverEl = null, dragType = null; // 'chapter' | 'lesson'
 let dragSourceChapterId = null;
@@ -224,9 +241,28 @@ function toast(type, title, msg, duration = 3000) {
   }, duration);
 }
 
-function setDirty(v) {
-  isDirty = v;
-  document.title = v ? '● ' + document.title.replace('● ','') : document.title.replace('● ','');
+function setDirty(state) {
+  isDirty = state;
+  
+  // 1. Vẫn giữ logic đổi tên tab trình duyệt
+  document.title = state ? '● ' + document.title.replace('● ','') : document.title.replace('● ','');
+  
+  // 2. BỔ SUNG: Trực quan hóa UI ngay trên nút Save
+  const btnSave = document.getElementById('btn-save-lesson');
+  if (btnSave) {
+    if (state) {
+      // Khi có thay đổi: Nút nổi bật lên, đổi màu và text
+      btnSave.style.background = 'var(--warning)'; // Đổi sang màu cam/vàng cảnh báo
+      btnSave.style.borderColor = 'var(--warning)';
+      btnSave.style.color = '#fff';
+      btnSave.innerHTML = '<span style="animation: pulse 1.5s infinite;">●</span> Save Changes';
+    } else {
+      // Khi đã lưu xong: Trả về trạng thái bình thường
+      btnSave.style.background = 'var(--primary)';
+      btnSave.style.borderColor = 'var(--primary)';
+      btnSave.innerHTML = 'Save';
+    }
+  }
 }
 
 window.addEventListener('click', (e) => {
@@ -501,8 +537,9 @@ function toggleChapter(chEl) {
 // ════════════════════════════════════════════
 async function selectLesson(lessonId, chapterId) {
   if (isDirty) {
-    if (!confirm('You have unsaved changes. Discard them?')) return;
-    setDirty(false);
+    const discard = await confirmDiscardModal();
+    if (!discard) return; // Nếu chọn "Không", dừng hàm lại
+    setDirty(false);      // Nếu chọn "Có", tiếp tục chuyển bài
   }
 
   document.querySelectorAll('.tree-lesson').forEach(e => e.classList.remove('active'));
@@ -578,16 +615,19 @@ function renderLessonPanel(meta, chapterId) {
   } else if (meta.type === 'quiz') {
     const questions = meta.questions || [];
     contentHtml = `
-      <div class="form-group">
-        <label for="f-title">Quiz Title</label>
-        <input type="text" id="f-title" value="${esc(meta.title)}" />
+      <div class="quiz-sticky-toolbar">
+        <div class="form-group" style="margin-bottom: 0; flex: 1;">
+          <label for="f-title">Quiz Title</label>
+          <input type="text" id="f-title" value="${esc(meta.title)}" oninput="setDirty(true)" />
+        </div>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="margin-top: 18px; box-shadow: var(--shadow-sm); flex-shrink: 0;">
+          + Add Question
+        </button>
       </div>
+      
       <div class="quiz-editor" id="quiz-editor">
         ${questions.map((q, qi) => renderQuestionEditor(q, qi)).join('')}
-      </div>
-      <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="margin-top:8px;">
-        + Add Question
-      </button>`;
+      </div>`;
   }
 
   panel.innerHTML = `
@@ -1156,6 +1196,26 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <style>
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+/* Freeze pane cho thanh công cụ của Quiz Editor */
+.quiz-sticky-toolbar {
+  position: sticky;
+  top: -32px; /* Đẩy sát lên mép trên */
+  background: var(--bg);
+  z-index: 100;
+  padding: 32px 0 16px 0;
+  margin-top: -32px;
+  margin-bottom: 20px;
+  border-bottom: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
 .editor-sidebar {position: sticky; top: var(--navbar-h, 64px); height: calc(100vh - var(--navbar-h, 64px)); z-index: 100;}
 .sidebar-footer {padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: white; margin-top: auto; position: sticky; bottom: 0; z-index: 10; }
 /* ── Editor-specific extra styles ── */
@@ -1224,5 +1284,34 @@ document.addEventListener('DOMContentLoaded', () => {
 .empty-state-editor { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; color: var(--text-2); gap: 12px; }
 .empty-state-editor h3 { font-size: 20px; font-weight: 700; color: var(--text); }
 .empty-state-editor p { font-size: 14px; color: var(--text-3); }
+.editor-sticky-panel {
+  position: sticky;
+  top: -32px;
+  background: var(--bg);
+  z-index: 100;
+  padding: 32px 0 16px 0;
+  margin-top: -32px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 12px 12px -12px rgba(0,0,0,0.05);
+}
 </style>
+
+<div class="modal-overlay" id="modal-confirm-discard" style="display:none; z-index: 9999;">
+  <div class="modal-content" style="max-width: 420px; padding: 0;">
+    <div class="modal-header">
+      <h2 class="modal-title" style="color: var(--warning);">⚠️ Cảnh báo</h2>
+      <button type="button" class="modal-close" onclick="resolveDiscard(false)">×</button>
+    </div>
+    <div class="modal-body" style="padding: 24px;">
+      <p style="color: var(--text-2); margin-bottom: 24px; font-size: 14px; line-height: 1.6;">
+        Bạn đang có các thay đổi chưa được lưu (Save). Nếu chuyển sang bài khác, những thay đổi này sẽ <b>bị mất hoàn toàn</b>. Bạn có chắc chắn muốn tiếp tục?
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="btn btn-ghost" onclick="resolveDiscard(false)">Không, ở lại</button>
+        <button class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);" onclick="resolveDiscard(true)">Có, hủy thay đổi</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

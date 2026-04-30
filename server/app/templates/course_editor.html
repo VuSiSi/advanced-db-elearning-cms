@@ -615,16 +615,20 @@ function renderLessonPanel(meta, chapterId) {
   } else if (meta.type === 'quiz') {
     const questions = meta.questions || [];
     contentHtml = `
-      <div class="quiz-sticky-toolbar">
-        <div class="form-group" style="margin-bottom: 0; flex: 1;">
-          <label for="f-title">Quiz Title</label>
-          <input type="text" id="f-title" value="${esc(meta.title)}" oninput="setDirty(true)" />
-        </div>
-        <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="margin-top: 18px; box-shadow: var(--shadow-sm); flex-shrink: 0;">
+      <!-- Khối này giờ là khối tĩnh, sẽ cuộn tự nhiên -->
+      <div class="form-group">
+        <label for="f-title">Quiz Title</label>
+        <input type="text" id="f-title" value="${esc(meta.title)}" oninput="setDirty(true)" />
+      </div>
+
+      <!-- Nút Add Question nằm độc lập trước danh sách -->
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="box-shadow: var(--shadow-sm);">
           + Add Question
         </button>
       </div>
-      
+
+      <!-- Danh sách câu hỏi -->
       <div class="quiz-editor" id="quiz-editor">
         ${questions.map((q, qi) => renderQuestionEditor(q, qi)).join('')}
       </div>`;
@@ -694,7 +698,7 @@ function renderQuestionEditor(q, qi) {
       <div class="quiz-question-header">
         <span class="quiz-q-num">Q${qi+1}</span>
         <input type="text" class="quiz-q-text" data-qi="${qi}"
-          value="${esc(q.question||'')}" placeholder="Nhập nội dung câu hỏi..." />
+          value="${esc(q.question||'')}" placeholder="Nhập nội dung câu hỏi" />
         <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Xóa câu hỏi">🗑</button>
       </div>
 
@@ -1248,14 +1252,81 @@ document.addEventListener('DOMContentLoaded', () => {
 .lesson-icon-document { background: var(--success-light) !important; color: var(--success) !important; }
 
 /* Lesson panel */
-.lesson-panel { height: 100%; display: flex; flex-direction: column; }
-.lesson-panel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+/* ── HEIGHT CHAIN FIX ──────────────────────────────────────
+   Chain: body(flex-col) → .app-container(flex:1) →
+          .editor-layout(flex:1) → .editor-content(flex-col) →
+          #content-panel(flex:1) → .lesson-panel(flex:1)
+   Only .lesson-form scrolls — header is naturally frozen.
+   ────────────────────────────────────────────────────────── */
+
+/* 1. Make main fill remaining viewport height */
+.app-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+
+/* 2. Editor layout fills app-container */
+.editor-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 3. Right panel: no padding, no scroll — becomes a flex column */
+.editor-content {
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4. JS-injected wrapper must join the flex chain */
+#content-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 5. Lesson panel fills content-panel */
+.lesson-panel {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 6. Header: naturally pinned — no sticky needed.
+      Horizontal padding moved here from .editor-content */
+.lesson-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 36px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
 .lesson-panel-actions { display: flex; gap: 8px; }
-.lesson-form { flex: 1; overflow-y: auto; }
+
+/* 7. ONLY this element scrolls now */
+.lesson-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 36px 48px;
+}
+
+/* 8. Empty/loading states keep proper spacing */
+.empty-state-editor {
+  padding: 32px 36px;
+}
 
 .video-preview { margin-top: 12px; }
 .video-preview-label { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }

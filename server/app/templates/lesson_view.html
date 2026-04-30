@@ -558,6 +558,12 @@ function setupQuizSubmit() {
         fb.textContent = isCorrect ? '✓ Chính xác!' : `✗ Sai rồi. Đáp án đúng là: ${answerText}`;
         fb.className = `lv-q-feedback ${isCorrect ? 'lv-fb-correct' : 'lv-fb-wrong'}`;
       }
+
+      const clearBtn = qEl.querySelector('.lv-btn-clear');
+      if (clearBtn) {
+        clearBtn.style.display = 'none';
+      }
+      
     });
 
     const score = Math.round((correctCount / total) * 100);

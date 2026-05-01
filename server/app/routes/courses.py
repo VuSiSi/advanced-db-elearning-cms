@@ -52,23 +52,19 @@ async def my_courses(token_data: TokenData = Depends(require_instructor)):
 @router.get("/{course_id}")
 async def get_course(course_id: str, token_data: TokenData = Depends(get_current_user)):
     """
-    Get full course with authorization:
-    - Instructor can only see their own course
-    - Student can see any course
+    Get full course — any authenticated user can view any course.
+    Instructors can view courses they don't own for preview/copy purposes.
+    Edit/delete operations still enforce ownership separately.
     """
     db = get_db()
     try:
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
-    
+
     if not doc:
         raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
-    
-    # Authorization: instructor can only see own course
-    if token_data.role == "instructor" and doc.get("instructor_id") != token_data.user_id:
-        raise HTTPException(status_code=403, detail="You can only view your own courses (403 Forbidden)")
-    
+
     return _course_from_doc(doc)
 
 
@@ -81,14 +77,10 @@ async def get_lesson(course_id: str, lesson_id: str, token_data: TokenData = Dep
         doc = await db.courses.find_one({"_id": ObjectId(course_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
-    
+
     if not doc:
         raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
-    
-    # Authorization: instructor can only see their own course lessons
-    if token_data.role == "instructor" and doc.get("instructor_id") != token_data.user_id:
-        raise HTTPException(status_code=403, detail="You can only view your own course lessons (403 Forbidden)")
-    
+
     for chapter in doc.get("chapters", []):
         for lesson in chapter.get("lessons", []):
             if lesson.get("lesson_id") == lesson_id:
@@ -153,7 +145,6 @@ async def add_chapter(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
-    # Get current chapters count and verify ownership
     doc = await db.courses.find_one(
         {"_id": oid, "instructor_id": token_data.user_id},
         {"chapters": 1}
@@ -203,6 +194,7 @@ async def delete_chapter(
                 "updated_at": utc_now()
             },
         },
+        array_filters=[{"chap.chapter_id": chapter_id}]
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
@@ -261,7 +253,6 @@ async def update_lesson(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
-    # Build the $set payload for the specific nested lesson
     update_fields = {
         f"chapters.$[chap].lessons.$[les].{k}": v
         for k, v in lesson_in.model_dump(exclude_unset=True).items()
@@ -346,12 +337,10 @@ async def reorder_course(
 
     chapters = doc.get("chapters", [])
 
-    # Reorder chapters
     if "chapters" in body:
         order_map = {c["chapter_id"]: c["order"] for c in body["chapters"]}
         chapters.sort(key=lambda c: order_map.get(c["chapter_id"], c.get("order", 0)))
 
-    # Reorder lessons within chapters
     if "lessons" in body:
         for ch in chapters:
             ch_id = ch["chapter_id"]

@@ -10,9 +10,16 @@ class QuizQuestion(BaseModel):
     question: str
     options: List[str]
     qtype: Literal["single", "multiple"] = "single"
-    correct_index: Optional[int] = None 
+    correct_index: Optional[int] = None
     correct_indices: List[int] = []
-    
+
+
+# Quiz-level settings (shuffle questions / answers)
+class QuizSettings(BaseModel):
+    shuffle_questions: bool = False
+    shuffle_answers: bool = False
+
+
 # LESSON  (embedded inside Chapter)
 class LessonBase(BaseModel):
     title: str
@@ -22,6 +29,7 @@ class LessonBase(BaseModel):
     duration_seconds: Optional[int] = None
     content: Optional[str] = None
     questions: Optional[List[QuizQuestion]] = None
+    quiz_settings: Optional[QuizSettings] = None   # shuffle config
     is_deleted: bool = False
 
 
@@ -84,7 +92,7 @@ class UserOut(UserBase):
 class LessonCompletion(BaseModel):
     lesson_id: str
     completed_at: datetime = Field(default_factory=utc_now)
-    score: Optional[float] = None   # None for video/doc, float for quiz
+    score: Optional[float] = None
 
 class ProgressCreate(BaseModel):
     student_id: str

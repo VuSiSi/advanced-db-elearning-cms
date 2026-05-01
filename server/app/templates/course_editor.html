@@ -7,7 +7,7 @@
   <!-- ═══ LEFT: Course tree sidebar ═══ -->
   <aside class="editor-sidebar" id="editor-sidebar">
     <div class="sidebar-header" style="display: block;">
-      <a href="/courses" style="font-size: 14px; color: var(--text-3); text-decoration: none; display: inline-block; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-3)'">
+      <a href="/courses" style="font-size: 12px; color: var(--text-3); text-decoration: none; display: inline-block; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-3)'">
         ← Quay lại danh sách khóa học
       </a>
       <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -35,6 +35,9 @@
       <button class="btn btn-ghost btn-sm" id="btn-edit-course-meta" title="Edit course title/description">
         ✏ Edit Course Info
       </button>
+      <button class="btn btn-ghost btn-sm" id="btn-open-copy-chapter" title="Copy chapter from another course">
+        📋 Copy Chapter
+      </button>
       <a class="btn btn-ghost btn-sm" href="/analytics/{{ course.id if course else '' }}" target="_blank">
         📊 Analytics
       </a>
@@ -46,9 +49,9 @@
     <div id="content-panel">
       <div class="empty-state-editor">
         <div class="empty-state-icon">🎯</div>
-        <h1>Select a lesson</h1>
+        <h3>Select a lesson</h3>
         <p>Click any lesson in the left panel to view or edit its content.</p>
-        <p class="muted" style="font-size:12px;margin-top:1px;">Drag lessons to reorder them.</p>
+        <p class="muted" style="font-size:12px;margin-top:8px;">Drag lessons to reorder them.</p>
       </div>
     </div>
   </section>
@@ -149,6 +152,57 @@
   </div>
 </div>
 
+<!-- Confirm Discard Modal -->
+<div class="modal-overlay" id="modal-confirm-discard" style="display:none; z-index: 9999;">
+  <div class="modal-content" style="max-width: 420px; padding: 0;">
+    <div class="modal-header">
+      <h2 class="modal-title" style="color: var(--warning);">⚠️ Cảnh báo</h2>
+      <button type="button" class="modal-close" onclick="resolveDiscard(false)">×</button>
+    </div>
+    <div class="modal-body" style="padding: 24px;">
+      <p style="color: var(--text-2); margin-bottom: 24px; font-size: 14px; line-height: 1.6;">
+        Bạn đang có các thay đổi chưa được lưu (Save). Nếu chuyển sang bài khác, những thay đổi này sẽ <b>bị mất hoàn toàn</b>. Bạn có chắc chắn muốn tiếp tục?
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="btn btn-ghost" onclick="resolveDiscard(false)">Không, ở lại</button>
+        <button class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);" onclick="resolveDiscard(true)">Có, hủy thay đổi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Copy Chapter from Another Course Modal ══ -->
+<div class="modal-overlay" id="modal-copy-chapter" style="display:none;">
+  <div class="modal-content" style="max-width:720px;width:95%;padding:0;">
+    <div class="modal-header">
+      <h2 class="modal-title">📋 Copy Chapter from Another Course</h2>
+      <button class="modal-close" onclick="closeModal('modal-copy-chapter')">×</button>
+    </div>
+    <div style="display:flex;height:460px;border-top:1px solid var(--border);">
+      <!-- Left: course list -->
+      <div style="width:230px;border-right:1px solid var(--border);overflow-y:auto;padding:12px;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">All Courses</div>
+        <div id="copy-courses-loading" class="loading" style="padding:8px 0;">Loading...</div>
+        <div id="copy-courses-list"></div>
+      </div>
+      <!-- Right: chapters of selected course -->
+      <div style="flex:1;overflow-y:auto;padding:20px;">
+        <div id="copy-chapters-panel" style="color:var(--text-3);text-align:center;padding:60px 20px;">
+          <div style="font-size:32px;margin-bottom:12px;">👈</div>
+          <div>Select a course on the left to see its chapters</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="padding:14px 20px;border-top:1px solid var(--border);">
+      <span id="copy-selected-count" style="font-size:13px;color:var(--text-3);flex:1;">No chapters selected</span>
+      <button class="btn btn-ghost" onclick="closeModal('modal-copy-chapter')">Cancel</button>
+      <button class="btn btn-primary" id="btn-confirm-copy-chapter" onclick="doCopyChapters()" disabled>
+        Copy Selected
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast container -->
 <div id="toast-container"></div>
 
@@ -161,34 +215,27 @@
 // ════════════════════════════════════════════
 const COURSE_ID   = "{{ course.id if course else '' }}";
 const LESSON_ICON = { video: '▶', quiz: '?', document: '≡' };
-const CARD_COLORS = ['blue','purple','cyan','warm','green','indigo'];
 
-let courseData    = null;   // full course JSON from server
-let currentLesson = null;   // { lessonId, chapterId, type, title }
-let pendingDeleteFn = null; // fn to call on confirm delete
+let courseData    = null;
+let currentLesson = null;
+let pendingDeleteFn = null;
 let pendingAddLessonChapterId = null;
-let isDirty = false;        // unsaved changes flag
+let isDirty = false;
 
 let discardPromiseResolve = null;
 
 function confirmDiscardModal() {
   document.getElementById('modal-confirm-discard').style.display = 'flex';
-  return new Promise((resolve) => {
-    discardPromiseResolve = resolve;
-  });
+  return new Promise((resolve) => { discardPromiseResolve = resolve; });
 }
 
 function resolveDiscard(choice) {
   document.getElementById('modal-confirm-discard').style.display = 'none';
-  if (discardPromiseResolve) {
-    discardPromiseResolve(choice);
-    discardPromiseResolve = null;
-  }
+  if (discardPromiseResolve) { discardPromiseResolve(choice); discardPromiseResolve = null; }
 }
 
-// ── Drag state ──
-let dragEl = null, dragOverEl = null, dragType = null; // 'chapter' | 'lesson'
-let dragSourceChapterId = null;
+// ── Chapter drag state ──
+let dragEl = null, dragOverEl = null, dragType = null;
 
 // ════════════════════════════════════════════
 //  ROLE GUARD — redirect students
@@ -199,7 +246,6 @@ let dragSourceChapterId = null;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     if (payload.role !== 'instructor') {
-      // Students go to lesson viewer
       window.location.href = `/courses/${COURSE_ID}`;
     }
   } catch { window.location.href = '/login'; }
@@ -216,10 +262,7 @@ function esc(s) {
 
 function authHeaders() {
   const t = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(t ? {'Authorization': `Bearer ${t}`} : {}),
-  };
+  return { 'Content-Type': 'application/json', ...(t ? {'Authorization': `Bearer ${t}`} : {}) };
 }
 
 function toast(type, title, msg, duration = 3000) {
@@ -235,60 +278,45 @@ function toast(type, title, msg, duration = 3000) {
   `;
   c.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => {
-    el.classList.add('hide');
-    setTimeout(() => el.remove(), 400);
-  }, duration);
+  setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 400); }, duration);
 }
 
 function setDirty(state) {
   isDirty = state;
-  
-  // 1. Vẫn giữ logic đổi tên tab trình duyệt
   document.title = state ? '● ' + document.title.replace('● ','') : document.title.replace('● ','');
-  
-  // 2. BỔ SUNG: Trực quan hóa UI ngay trên nút Save
   const btnSave = document.getElementById('btn-save-lesson');
   if (btnSave) {
     if (state) {
-      // Khi có thay đổi: Nút nổi bật lên, đổi màu và text
-      btnSave.style.background = 'var(--warning)'; // Đổi sang màu cam/vàng cảnh báo
+      btnSave.style.background = 'var(--warning)';
       btnSave.style.borderColor = 'var(--warning)';
       btnSave.style.color = '#fff';
       btnSave.innerHTML = '<span style="animation: pulse 1.5s infinite;">●</span> Save Changes';
     } else {
-      // Khi đã lưu xong: Trả về trạng thái bình thường
-      btnSave.style.background = 'var(--primary)';
-      btnSave.style.borderColor = 'var(--primary)';
+      btnSave.style.background = '';
+      btnSave.style.borderColor = '';
+      btnSave.style.color = '';
       btnSave.innerHTML = 'Save';
     }
   }
 }
 
+// Warn on navigation when there are unsaved changes
 window.addEventListener('click', (e) => {
-  if (!isDirty) return; // If everything is saved, allow normal behavior
-
+  if (!isDirty) return;
   const link = e.target.closest('a');
   const logoutBtn = e.target.closest('#logout-btn');
-
-  // Check if user clicked a navigation link (not opening in a new tab) or the logout button
   if ((link && link.href && link.target !== '_blank' && !link.href.includes('#')) || logoutBtn) {
-    e.preventDefault();   // Prevent browser from navigating
-    e.stopPropagation();  // Prevent app.js from logging out
-    
-    toast('warning', 'Unsaved Changes', 'Bạn đang có thay đổi chưa lưu! Vui lòng lưu lại (Save) trước khi thoát khỏi trình chỉnh sửa.', 4000);
+    e.preventDefault();
+    e.stopPropagation();
+    toast('warning', 'Unsaved Changes', 'Vui lòng lưu lại (Save) trước khi thoát khỏi trình chỉnh sửa.', 4000);
   }
-}, true); // 'true' enables the capture phase, catching the click BEFORE other scripts do
+}, true);
 
 // ════════════════════════════════════════════
 //  MODALS
 // ════════════════════════════════════════════
-function openModal(id) {
-  document.getElementById(id).style.display = 'flex';
-}
-function closeModal(id) {
-  document.getElementById(id).style.display = 'none';
-}
+function openModal(id)  { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
 // ════════════════════════════════════════════
 //  LOAD & RENDER COURSE TREE
@@ -296,10 +324,7 @@ function closeModal(id) {
 async function loadCourse() {
   try {
     const res = await fetch(`/api/courses/${COURSE_ID}`, { headers: authHeaders() });
-    if (!res.ok) {
-      const e = await res.json();
-      throw new Error(e.detail || 'Failed to load course');
-    }
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Failed to load course'); }
     courseData = await res.json();
     renderTree();
     updateCourseMeta();
@@ -333,7 +358,7 @@ function renderTree(filterQ = '') {
     return;
   }
 
-  tree.innerHTML = chapters.map((ch, ci) => {
+  tree.innerHTML = chapters.map((ch) => {
     const lessons = (ch.lessons || []).filter(ls =>
       !q || ls.title.toLowerCase().includes(q)
     );
@@ -356,8 +381,10 @@ function renderTree(filterQ = '') {
           >🗑</button>
         </div>
       </div>
-      <div class="tree-lessons" id="lessons-${esc(ch.chapter_id)}">
-        ${lessons.map((ls, li) => `
+      <div class="tree-lessons" id="lessons-${esc(ch.chapter_id)}"
+           data-chapter-id="${esc(ch.chapter_id)}"
+           data-drag-type="lesson-container">
+        ${lessons.map((ls) => `
           <div class="tree-lesson${currentLesson && currentLesson.lessonId===ls.lesson_id?' active':''}"
                id="ls-${esc(ls.lesson_id)}"
                draggable="true"
@@ -365,7 +392,7 @@ function renderTree(filterQ = '') {
                data-chapter-id="${esc(ch.chapter_id)}"
                data-drag-type="lesson"
                data-action="select-lesson">
-            <span class="drag-handle lesson-drag" title="Drag to reorder">⠿</span>
+            <span class="drag-handle lesson-drag" title="Drag to reorder or move to another chapter">⠿</span>
             <span class="lesson-icon lesson-icon-${esc(ls.type)}">${LESSON_ICON[ls.type]||'•'}</span>
             <span class="lesson-title">${esc(ls.title)}</span>
             <button class="tree-action-btn" title="Delete lesson"
@@ -390,23 +417,18 @@ function attachTreeEvents() {
   const tree = document.getElementById('course-tree');
 
   tree.onclick = (e) => {
-    // Select lesson
     const lessonEl = e.target.closest('[data-action="select-lesson"]');
     if (lessonEl && !e.target.closest('.tree-action-btn')) {
       selectLesson(lessonEl.dataset.lessonId, lessonEl.dataset.chapterId);
       return;
     }
-    // Toggle chapter
     const headerEl = e.target.closest('[data-action="toggle-chapter"]');
     if (headerEl && !e.target.closest('.tree-action-btn')) {
       toggleChapter(headerEl.closest('.tree-chapter'));
       return;
     }
-    // Add lesson
     const addEl = e.target.closest('[data-action="add-lesson"]');
-    if (addEl) {
-      openAddLessonModal(addEl.dataset.chapterId);
-    }
+    if (addEl) { openAddLessonModal(addEl.dataset.chapterId); }
   };
 
   tree.onkeydown = (e) => {
@@ -415,7 +437,7 @@ function attachTreeEvents() {
     if (addEl) { e.preventDefault(); openAddLessonModal(addEl.dataset.chapterId); }
   };
 
-  // Drag & drop
+  // ── Drag & drop for chapters and lessons ──
   tree.querySelectorAll('[draggable="true"]').forEach(el => {
     el.addEventListener('dragstart', onDragStart);
     el.addEventListener('dragend',   onDragEnd);
@@ -423,15 +445,21 @@ function attachTreeEvents() {
     el.addEventListener('drop',      onDrop);
     el.addEventListener('dragleave', onDragLeave);
   });
+
+  // Also make lesson-containers (the .tree-lessons divs) accept drops
+  tree.querySelectorAll('[data-drag-type="lesson-container"]').forEach(el => {
+    el.addEventListener('dragover',  onContainerDragOver);
+    el.addEventListener('drop',      onContainerDrop);
+    el.addEventListener('dragleave', onDragLeave);
+  });
 }
 
 // ════════════════════════════════════════════
-//  DRAG & DROP
+//  DRAG & DROP (chapters and lessons)
 // ════════════════════════════════════════════
 function onDragStart(e) {
   dragEl   = this;
   dragType = this.dataset.dragType;
-  dragSourceChapterId = this.dataset.chapterId || null;
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', this.id);
   setTimeout(() => this.classList.add('dragging'), 0);
@@ -445,7 +473,7 @@ function onDragEnd() {
 
 function onDragOver(e) {
   if (!dragEl || dragEl === this) return;
-  if (this.dataset.dragType !== dragType) return; // don't mix chapters and lessons
+  if (this.dataset.dragType !== dragType) return; // same type only for element-on-element
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
@@ -453,61 +481,94 @@ function onDragOver(e) {
   dragOverEl = this;
 }
 
-function onDragLeave() {
-  this.classList.remove('drag-over');
+// Allow dropping a lesson into a lesson-container (another chapter's lesson list)
+function onContainerDragOver(e) {
+  if (!dragEl || dragType !== 'lesson') return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  this.classList.add('drag-over');
+  dragOverEl = this;
 }
+
+function onDragLeave() { this.classList.remove('drag-over'); }
 
 async function onDrop(e) {
   e.preventDefault();
   if (!dragEl || !dragOverEl || dragEl === dragOverEl) return;
-  if (dragEl.dataset.dragType !== dragOverEl.dataset.dragType) return;
 
   const chapters = courseData.chapters || [];
 
-  if (dragType === 'chapter') {
+  if (dragType === 'chapter' && dragOverEl.dataset.dragType === 'chapter') {
+    // ── Reorder chapters ──
     const fromIdx = chapters.findIndex(c => c.chapter_id === dragEl.dataset.chapterId);
     const toIdx   = chapters.findIndex(c => c.chapter_id === dragOverEl.dataset.chapterId);
     if (fromIdx < 0 || toIdx < 0) return;
-
     const [moved] = chapters.splice(fromIdx, 1);
     chapters.splice(toIdx, 0, moved);
     chapters.forEach((c, i) => c.order = i);
-
     renderTree(document.getElementById('lesson-search').value);
     await saveReorder();
 
-  } else if (dragType === 'lesson') {
+  } else if (dragType === 'lesson' && dragOverEl.dataset.dragType === 'lesson') {
+    // ── Reorder lessons (possibly across chapters) ──
     const srcChId  = dragEl.dataset.chapterId;
     const dstChId  = dragOverEl.dataset.chapterId;
     const srcCh    = chapters.find(c => c.chapter_id === srcChId);
     const dstCh    = chapters.find(c => c.chapter_id === dstChId);
     if (!srcCh || !dstCh) return;
-
     const fromIdx = srcCh.lessons.findIndex(l => l.lesson_id === dragEl.dataset.lessonId);
     const toIdx   = dstCh.lessons.findIndex(l => l.lesson_id === dragOverEl.dataset.lessonId);
     if (fromIdx < 0 || toIdx < 0) return;
-
     const [moved] = srcCh.lessons.splice(fromIdx, 1);
     dstCh.lessons.splice(toIdx, 0, moved);
-    srcCh.lessons.forEach((l,i) => l.order = i);
-    if (srcChId !== dstChId) dstCh.lessons.forEach((l,i) => l.order = i);
-
+    srcCh.lessons.forEach((l, i) => l.order = i);
+    if (srcChId !== dstChId) dstCh.lessons.forEach((l, i) => l.order = i);
     renderTree(document.getElementById('lesson-search').value);
     await saveReorder();
   }
 }
 
+// Handle lesson dropped on a chapter's lesson container (append to end)
+async function onContainerDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!dragEl || dragType !== 'lesson') return;
+
+  const srcChId = dragEl.dataset.chapterId;
+  const dstChId = this.dataset.chapterId;
+  if (!srcChId || !dstChId || srcChId === dstChId) return;
+
+  const chapters = courseData.chapters || [];
+  const srcCh = chapters.find(c => c.chapter_id === srcChId);
+  const dstCh = chapters.find(c => c.chapter_id === dstChId);
+  if (!srcCh || !dstCh) return;
+
+  const fromIdx = srcCh.lessons.findIndex(l => l.lesson_id === dragEl.dataset.lessonId);
+  if (fromIdx < 0) return;
+
+  const [moved] = srcCh.lessons.splice(fromIdx, 1);
+  dstCh.lessons.push(moved);  // append to end of target chapter
+  srcCh.lessons.forEach((l, i) => l.order = i);
+  dstCh.lessons.forEach((l, i) => l.order = i);
+
+  // Update currentLesson chapter reference if it was moved
+  if (currentLesson && currentLesson.lessonId === moved.lesson_id) {
+    currentLesson.chapterId = dstChId;
+  }
+
+  renderTree(document.getElementById('lesson-search').value);
+  await saveReorder();
+  toast('success', 'Moved', `Lesson moved to "${dstCh.title}".`, 2000);
+}
+
 async function saveReorder() {
-  const chapters = (courseData.chapters || []).map((c, i) => ({
-    chapter_id: c.chapter_id, order: i,
-  }));
+  const chapters = (courseData.chapters || []).map((c, i) => ({ chapter_id: c.chapter_id, order: i }));
   const lessons = {};
   (courseData.chapters || []).forEach(c => {
-    lessons[c.chapter_id] = (c.lessons || []).map((l, i) => ({
-      lesson_id: l.lesson_id, order: i,
-    }));
+    lessons[c.chapter_id] = (c.lessons || []).map((l, i) => ({ lesson_id: l.lesson_id, order: i }));
   });
-
   try {
     const res = await fetch(`/api/courses/${COURSE_ID}/reorder`, {
       method: 'PUT',
@@ -538,8 +599,8 @@ function toggleChapter(chEl) {
 async function selectLesson(lessonId, chapterId) {
   if (isDirty) {
     const discard = await confirmDiscardModal();
-    if (!discard) return; // Nếu chọn "Không", dừng hàm lại
-    setDirty(false);      // Nếu chọn "Có", tiếp tục chuyển bài
+    if (!discard) return;
+    setDirty(false);
   }
 
   document.querySelectorAll('.tree-lesson').forEach(e => e.classList.remove('active'));
@@ -557,32 +618,6 @@ async function selectLesson(lessonId, chapterId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load lesson');
-
-    const draftStr = localStorage.getItem(`draft_lesson_${lessonId}`);
-    if (draftStr) {
-      try {
-        const draft = JSON.parse(draftStr);
-        // Ghi đè dữ liệu nháp lên dữ liệu gốc của Server
-        data.title = draft.title ?? data.title;
-        if (data.type === 'video') {
-            data.video_url = draft.video_url ?? data.video_url;
-            data.duration_seconds = draft.duration_seconds ?? data.duration_seconds;
-        } else if (data.type === 'document') {
-            data.content = draft.content ?? data.content;
-        } else if (data.type === 'quiz') {
-            data.questions = draft.questions ?? data.questions;
-        }
-        
-        // Hiện thông báo và bật cờ đỏ (isDirty) để người dùng biết họ cần Save
-        setTimeout(() => {
-            toast('info', 'Đã khôi phục bản nháp', 'Dữ liệu đang gõ dở từ phiên trước đã được khôi phục. Hãy kiểm tra và bấm Save!', 6000);
-            setDirty(true);
-        }, 500);
-      } catch (e) {
-        console.error("Lỗi khi đọc bản nháp:", e);
-      }
-    }
-
     currentLesson.type  = data.type;
     currentLesson.title = data.title;
     renderLessonPanel(data, chapterId);
@@ -591,12 +626,13 @@ async function selectLesson(lessonId, chapterId) {
   }
 }
 
+// ════════════════════════════════════════════
+//  RENDER LESSON PANEL
+// ════════════════════════════════════════════
 function renderLessonPanel(meta, chapterId) {
   const panel = document.getElementById('content-panel');
-
   const typeLabels = { video: 'Video', quiz: 'Quiz', document: 'Document' };
   const badgeClass = { video: 'badge-video', quiz: 'badge-quiz', document: 'badge-doc' };
-
   let contentHtml = '';
 
   if (meta.type === 'video') {
@@ -606,9 +642,8 @@ function renderLessonPanel(meta, chapterId) {
         <input type="text" id="f-title" value="${esc(meta.title)}" />
       </div>
       <div class="form-group">
-        <label for="f-video-url">Video URL or Upload Video File (Do not accept audio-only files)</label>
+        <label for="f-video-url">Video URL or Upload Video File (audio-only files not accepted)</label>
         <input type="url" id="f-video-url" value="${esc(meta.video_url||'')}" placeholder="https://youtube.com/watch?v=..." />
-        
         <input type="file" id="f-video-upload" accept="video/mp4, video/x-m4v, video/*" style="margin-top: 10px; padding: 6px;" onchange="validateVideoUpload(this)" />
       </div>
       <div class="form-group">
@@ -634,29 +669,66 @@ function renderLessonPanel(meta, chapterId) {
       <div class="form-group">
         <label for="f-content">Content (Markdown supported) or Upload File (.pdf, .txt)</label>
         <textarea id="f-content" rows="14" style="font-family:var(--font-mono);font-size:13px;">${esc(meta.content||'')}</textarea>
-        
-        <input type="file" id="f-doc-upload" accept=".pdf, .txt, .doc, .docx, application/pdf, text/plain" style="margin-top: 10px; padding: 6px;" />
+        <input type="file" id="f-doc-upload" accept=".pdf,.txt,.doc,.docx,application/pdf,text/plain" style="margin-top: 10px; padding: 6px;" />
       </div>`;
 
   } else if (meta.type === 'quiz') {
+    // ── Quiz: 2-column layout — questions left, settings right ──
     const questions = meta.questions || [];
+    const settings  = meta.quiz_settings || {};
     contentHtml = `
-      <!-- Khối này giờ là khối tĩnh, sẽ cuộn tự nhiên -->
-      <div class="form-group">
-        <label for="f-title">Quiz Title</label>
-        <input type="text" id="f-title" value="${esc(meta.title)}" oninput="setDirty(true)" />
-      </div>
+      <div style="display:flex;gap:24px;align-items:flex-start;">
 
-      <!-- Nút Add Question nằm độc lập trước danh sách -->
-      <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
-        <button class="btn btn-secondary btn-sm" type="button" onclick="addQuestion()" style="box-shadow: var(--shadow-sm);">
-          + Add Question
-        </button>
-      </div>
+        <!-- Questions column -->
+        <div style="flex:1;min-width:0;">
+          <div class="form-group">
+            <label for="f-title">Quiz Title</label>
+            <input type="text" id="f-title" value="${esc(meta.title)}" oninput="setDirty(true)" />
+          </div>
 
-      <!-- Danh sách câu hỏi -->
-      <div class="quiz-editor" id="quiz-editor">
-        ${questions.map((q, qi) => renderQuestionEditor(q, qi)).join('')}
+          <div class="quiz-editor" id="quiz-editor">
+            ${renderQuestionsWithInsertZones(questions)}
+          </div>
+        </div>
+
+        <!-- Settings column -->
+        <div class="quiz-settings-panel">
+          <div class="quiz-settings-title">⚙ Quiz Settings</div>
+
+          <div class="quiz-setting-row">
+            <div class="quiz-setting-info">
+              <div class="quiz-setting-label">Tráo thứ tự câu hỏi</div>
+              <div class="quiz-setting-desc">Shuffle question order on each attempt</div>
+            </div>
+            <label class="quiz-toggle">
+              <input type="checkbox" id="qs-shuffle-questions"
+                     ${settings.shuffle_questions ? 'checked' : ''}
+                     onchange="setDirty(true)" />
+              <span class="quiz-toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="quiz-setting-row">
+            <div class="quiz-setting-info">
+              <div class="quiz-setting-label">Tráo thứ tự đáp án</div>
+              <div class="quiz-setting-desc">Shuffle answer options per question</div>
+            </div>
+            <label class="quiz-toggle">
+              <input type="checkbox" id="qs-shuffle-answers"
+                     ${settings.shuffle_answers ? 'checked' : ''}
+                     onchange="setDirty(true)" />
+              <span class="quiz-toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="quiz-settings-stats">
+            <div class="quiz-stats-item">
+              <span class="quiz-stats-val" id="qs-stat-count">${questions.length}</span>
+              <span class="quiz-stats-lbl">Questions</span>
+            </div>
+          </div>
+        </div>
+
       </div>`;
   }
 
@@ -687,139 +759,228 @@ function renderLessonPanel(meta, chapterId) {
   panel.querySelectorAll('input,textarea,select').forEach(el => {
     el.addEventListener('input', () => setDirty(true));
   });
-}
 
-// Validate video upload input
-function validateVideoUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-
-
-  if (file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.mp3')) {
-    alert('Invalid file type. Please upload a video file, not audio.');
-    input.value = '';
-    return;
+  // Attach quiz drag-and-drop if quiz
+  if (meta.type === 'quiz') {
+    attachQuizDragEvents();
+    updateQuizStatsCount();
   }
-  
-  // Optional: further validate video formats if needed
-  setDirty(true);
 }
 
+// ════════════════════════════════════════════
+//  QUIZ — Insert Zones & Question Rendering
+// ════════════════════════════════════════════
+
+/** Render all questions surrounded by insert-zone dividers (like PowerPoint slide insertion) */
+function renderQuestionsWithInsertZones(questions) {
+  if (!questions.length) {
+    return `
+      <div class="quiz-insert-zone quiz-insert-zone-empty" onclick="insertQuestion(0)">
+        <span style="font-size:28px;display:block;margin-bottom:8px;">➕</span>
+        <span>Click to add your first question</span>
+      </div>`;
+  }
+  let html = renderInsertZone(0, true);
+  questions.forEach((q, qi) => {
+    html += renderQuestionEditor(q, qi);
+    html += renderInsertZone(qi + 1, false);
+  });
+  return html;
+}
+
+/** Thin insert-zone divider between questions */
+function renderInsertZone(atIndex, isFirst) {
+  return `
+    <div class="quiz-insert-zone-divider" data-insert-at="${atIndex}">
+      <div class="quiz-insert-line"></div>
+      <button type="button" class="quiz-insert-btn" onclick="insertQuestion(${atIndex})" title="Insert question here">+</button>
+      <div class="quiz-insert-line"></div>
+    </div>`;
+}
+
+/** Render a single question editor block with drag handle */
 function renderQuestionEditor(q, qi) {
   const qtype = q.qtype || 'single';
-  const indices = q.correct_indices?.length ? q.correct_indices : (q.correct_index !== undefined && q.correct_index !== null ? [q.correct_index] : []);
+  const indices = q.correct_indices?.length ? q.correct_indices
+    : (q.correct_index !== undefined && q.correct_index !== null ? [q.correct_index] : []);
   const inputType = qtype === 'multiple' ? 'checkbox' : 'radio';
 
   const opts = (q.options || ['', '', '']).map((opt, oi) => `
     <div class="quiz-option-row">
       <input type="${inputType}" name="correct-${qi}" value="${oi}"
-        ${indices.includes(oi) ? 'checked' : ''} title="Đánh dấu đáp án đúng" />
+        ${indices.includes(oi) ? 'checked' : ''} title="Mark as correct answer" />
       <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}"
-        value="${esc(opt)}" placeholder="Lựa chọn ${oi+1}" />
-      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Xóa lựa chọn">×</button>
+        value="${esc(opt)}" placeholder="Option ${oi+1}" oninput="setDirty(true)" />
+      <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove option">×</button>
     </div>`).join('');
 
   return `
-    <div class="quiz-question-block" data-qi="${qi}" id="qq-${qi}" data-qtype="${qtype}">
+    <div class="quiz-question-block" data-qi="${qi}" id="qq-${qi}" data-qtype="${qtype}" draggable="true">
       <div class="quiz-question-header">
+        <span class="quiz-drag-handle" title="Drag to reorder question">⠿</span>
         <span class="quiz-q-num">Q${qi+1}</span>
         <input type="text" class="quiz-q-text" data-qi="${qi}"
-          value="${esc(q.question||'')}" placeholder="Nhập nội dung câu hỏi" />
-        <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Xóa câu hỏi">🗑</button>
+          value="${esc(q.question||'')}" placeholder="Enter question text" oninput="setDirty(true)" />
+        <button type="button" onclick="removeQuestion(${qi})" class="btn-icon-del" title="Delete question">🗑</button>
       </div>
 
       <div class="quiz-qtype-picker-wrapper">
-        <label class="quiz-label-sm">Loại câu hỏi:</label>
+        <label class="quiz-label-sm">Question type:</label>
         <div class="lesson-type-picker">
-          <button type="button" class="type-btn qtype-btn ${qtype === 'single' ? 'active' : ''}" 
+          <button type="button" class="type-btn qtype-btn ${qtype === 'single' ? 'active' : ''}"
             data-type="single" onclick="changeQuestionType(${qi}, 'single', this)">
-            Một đáp án (Radio Button)
+            Single answer (Radio)
           </button>
-          <button type="button" class="type-btn qtype-btn ${qtype === 'multiple' ? 'active' : ''}" 
+          <button type="button" class="type-btn qtype-btn ${qtype === 'multiple' ? 'active' : ''}"
             data-type="multiple" onclick="changeQuestionType(${qi}, 'multiple', this)">
-            Nhiều đáp án (Checkbox)
+            Multiple answers (Checkbox)
           </button>
         </div>
       </div>
 
       <div class="quiz-options-list" id="opts-${qi}">${opts}</div>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="addOption(${qi})"
-        style="margin-top:6px;">+ Thêm lựa chọn</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="addOption(${qi})" style="margin-top:6px;">
+        + Add option
+      </button>
     </div>`;
 }
 
-// ── Quiz editor helpers ──
-function addQuestion() {
+// ════════════════════════════════════════════
+//  QUIZ — Drag-and-drop for question reorder
+// ════════════════════════════════════════════
+let quizDragEl = null;
+
+function attachQuizDragEvents() {
   const editor = document.getElementById('quiz-editor');
   if (!editor) return;
-  const qi = editor.querySelectorAll('.quiz-question-block').length;
-  const div = document.createElement('div');
-  div.innerHTML = renderQuestionEditor({ question:'', options:['','',''], correct_index:0 }, qi);
-  editor.appendChild(div.firstElementChild);
+  editor.querySelectorAll('.quiz-question-block').forEach(block => {
+    block.addEventListener('dragstart', onQuizDragStart);
+    block.addEventListener('dragend',   onQuizDragEnd);
+    block.addEventListener('dragover',  onQuizDragOver);
+    block.addEventListener('drop',      onQuizDrop);
+    block.addEventListener('dragleave', () => block.classList.remove('drag-over'));
+  });
+}
+
+function onQuizDragStart(e) {
+  quizDragEl = this;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => this.classList.add('dragging'), 0);
+  // Stop event from bubbling to the tree drag handler
+  e.stopPropagation();
+}
+
+function onQuizDragEnd(e) {
+  this.classList.remove('dragging');
+  document.querySelectorAll('.quiz-question-block.drag-over').forEach(el => el.classList.remove('drag-over'));
+  quizDragEl = null;
+}
+
+function onQuizDragOver(e) {
+  if (!quizDragEl || quizDragEl === this) return;
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.quiz-question-block.drag-over').forEach(el => el.classList.remove('drag-over'));
+  this.classList.add('drag-over');
+}
+
+function onQuizDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!quizDragEl || quizDragEl === this) return;
+
+  const editor = document.getElementById('quiz-editor');
+  const allBlocks = Array.from(editor.querySelectorAll('.quiz-question-block'));
+  const fromIdx = allBlocks.indexOf(quizDragEl);
+  const toIdx   = allBlocks.indexOf(this);
+  if (fromIdx < 0 || toIdx < 0) return;
+
+  // Collect all current question data
+  const questions = allBlocks.map(block => collectQuestionDataFromBlock(block));
+  const [moved] = questions.splice(fromIdx, 1);
+  questions.splice(toIdx, 0, moved);
+
+  // Re-render with new order
+  editor.innerHTML = renderQuestionsWithInsertZones(questions);
+  attachQuizDragEvents();
+  updateQuizStatsCount();
   setDirty(true);
 }
 
+/** Collect question data from a rendered DOM block */
+function collectQuestionDataFromBlock(block) {
+  const qi = parseInt(block.dataset.qi);
+  const qtype = block.querySelector('.qtype-btn.active')?.dataset.type || 'single';
+  const question = block.querySelector('.quiz-q-text')?.value || '';
+  const optInputs = block.querySelectorAll('.quiz-option-input');
+  const options = Array.from(optInputs).map(i => i.value);
+  const checkedBoxes = block.querySelectorAll(`input[name="correct-${qi}"]:checked`);
+  const correct_indices = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
+  return { question, options, correct_indices, qtype };
+}
+
+// ════════════════════════════════════════════
+//  QUIZ — Insert / Remove Questions & Options
+// ════════════════════════════════════════════
+
+/** Insert a new empty question at a specific index */
+function insertQuestion(atIndex) {
+  const editor = document.getElementById('quiz-editor');
+  if (!editor) return;
+
+  const allBlocks = Array.from(editor.querySelectorAll('.quiz-question-block'));
+  const questions = allBlocks.map(b => collectQuestionDataFromBlock(b));
+
+  const newQ = { question: '', options: ['', '', ''], correct_indices: [], qtype: 'single' };
+  questions.splice(atIndex, 0, newQ);
+
+  editor.innerHTML = renderQuestionsWithInsertZones(questions);
+  attachQuizDragEvents();
+  updateQuizStatsCount();
+  setDirty(true);
+
+  // Focus the new question's text input
+  const newBlock = document.getElementById(`qq-${atIndex}`);
+  if (newBlock) {
+    newBlock.querySelector('.quiz-q-text')?.focus();
+    newBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
 function removeQuestion(qi) {
-  const block = document.getElementById(`qq-${qi}`);
-  if (block) block.remove();
-  // Re-index
-  document.querySelectorAll('.quiz-question-block').forEach((b, i) => {
-    b.dataset.qi = i;
-    b.id = `qq-${i}`;
-    b.querySelector('.quiz-q-num').textContent = `Q${i+1}`;
-    b.querySelector('.quiz-q-text').dataset.qi = i;
-    b.querySelector('[onclick^="removeQuestion"]').setAttribute('onclick', `removeQuestion(${i})`);
-    b.querySelector('[onclick^="addOption"]').setAttribute('onclick', `addOption(${i})`);
-    b.querySelectorAll('.quiz-option-input').forEach((inp, oi) => {
-      inp.dataset.qi = i; inp.dataset.oi = oi;
-    });
-    b.querySelectorAll('.quiz-option-row input[type=radio]').forEach((r, oi) => {
-      r.name = `correct-${i}`; r.value = oi;
-    });
-    b.querySelectorAll('[onclick^="removeOption"]').forEach((btn, oi) => {
-      btn.setAttribute('onclick', `removeOption(${i},${oi})`);
-    });
-  });
+  const editor = document.getElementById('quiz-editor');
+  if (!editor) return;
+
+  const allBlocks = Array.from(editor.querySelectorAll('.quiz-question-block'));
+  if (allBlocks.length <= 1) {
+    toast('warning', 'Min 1 question', 'A quiz must have at least one question.');
+    return;
+  }
+
+  const questions = allBlocks.map(b => collectQuestionDataFromBlock(b));
+  questions.splice(qi, 1);
+
+  editor.innerHTML = renderQuestionsWithInsertZones(questions);
+  attachQuizDragEvents();
+  updateQuizStatsCount();
   setDirty(true);
 }
 
 function addOption(qi) {
-  const list = document.getElementById(`opts-${qi}`);
+  const list  = document.getElementById(`opts-${qi}`);
   const block = document.getElementById(`qq-${qi}`);
   if (!list || !block) return;
-  const qtype = block.dataset.qtype || 'single';
+  const qtype     = block.dataset.qtype || 'single';
   const inputType = qtype === 'multiple' ? 'checkbox' : 'radio';
-  
   const oi = list.querySelectorAll('.quiz-option-row').length;
   const div = document.createElement('div');
   div.innerHTML = `
     <div class="quiz-option-row">
       <input type="${inputType}" name="correct-${qi}" value="${oi}" title="Mark as correct" />
-      <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}" placeholder="Option ${oi+1}" />
+      <input type="text" class="quiz-option-input" data-qi="${qi}" data-oi="${oi}" placeholder="Option ${oi+1}" oninput="setDirty(true)" />
       <button type="button" onclick="removeOption(${qi},${oi})" class="btn-icon-del" title="Remove">×</button>
     </div>`;
   list.appendChild(div.firstElementChild);
-  setDirty(true);
-}
-
-function changeQuestionType(qi, newType, btnEl) {
-  const block = document.getElementById(`qq-${qi}`);
-  if (!block) return;
-  
-  block.dataset.qtype = newType;
-  
-  // Cập nhật giao diện nút bấm
-  block.querySelectorAll('.qtype-btn').forEach(btn => btn.classList.remove('active'));
-  if (btnEl) btnEl.classList.add('active');
-  
-  const inputType = newType === 'multiple' ? 'checkbox' : 'radio';
-  
-  // Đổi loại input của các lựa chọn
-  block.querySelectorAll('.quiz-option-row input[name^="correct-"]').forEach(inp => {
-    inp.type = inputType;
-    if (newType === 'single') inp.checked = false; // Reset để tránh nhiều radio được chọn
-  });
-  
   setDirty(true);
 }
 
@@ -828,35 +989,53 @@ function removeOption(qi, oi) {
   const rows = list?.querySelectorAll('.quiz-option-row');
   if (!rows || rows.length <= 2) { toast('warning','Min 2 options','At least 2 options required.'); return; }
   rows[oi]?.remove();
-  // Re-index options
+  // Re-index
   list.querySelectorAll('.quiz-option-row').forEach((row, newOi) => {
-    row.querySelector('input[type=radio]').value = newOi;
+    const radio = row.querySelector('input[type=radio], input[type=checkbox]');
+    if (radio) radio.value = newOi;
     const inp = row.querySelector('.quiz-option-input');
-    inp.dataset.oi = newOi;
-    inp.placeholder = `Option ${newOi+1}`;
-    row.querySelector('[onclick^="removeOption"]').setAttribute('onclick', `removeOption(${qi},${newOi})`);
+    if (inp) { inp.dataset.oi = newOi; inp.placeholder = `Option ${newOi+1}`; }
+    const delBtn = row.querySelector('[onclick^="removeOption"]');
+    if (delBtn) delBtn.setAttribute('onclick', `removeOption(${qi},${newOi})`);
   });
   setDirty(true);
 }
 
+function changeQuestionType(qi, newType, btnEl) {
+  const block = document.getElementById(`qq-${qi}`);
+  if (!block) return;
+  block.dataset.qtype = newType;
+  block.querySelectorAll('.qtype-btn').forEach(btn => btn.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  const inputType = newType === 'multiple' ? 'checkbox' : 'radio';
+  block.querySelectorAll('.quiz-option-row input[name^="correct-"]').forEach(inp => {
+    inp.type = inputType;
+    if (newType === 'single') inp.checked = false;
+  });
+  setDirty(true);
+}
+
+function updateQuizStatsCount() {
+  const editor = document.getElementById('quiz-editor');
+  const el = document.getElementById('qs-stat-count');
+  if (editor && el) el.textContent = editor.querySelectorAll('.quiz-question-block').length;
+}
+
 function collectQuizQuestions() {
   const blocks = document.querySelectorAll('.quiz-question-block');
-  return Array.from(blocks).map((block) => {
-    const qi      = parseInt(block.dataset.qi);
+  const result = [];
+  blocks.forEach((block) => {
+    const qi = parseInt(block.dataset.qi);
     const question = block.querySelector('.quiz-q-text')?.value || '';
-    
-    // Lấy loại câu hỏi từ nút đang active
     const activeBtn = block.querySelector('.qtype-btn.active');
     const qtype = activeBtn ? activeBtn.dataset.type : 'single';
-    
     const optInputs = block.querySelectorAll('.quiz-option-input');
-    const options   = Array.from(optInputs).map(i => i.value);
-    
+    const options = Array.from(optInputs).map(i => i.value);
     const checkedBoxes = block.querySelectorAll(`input[name="correct-${qi}"]:checked`);
     const correct_indices = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
-    
-    return { question, options, correct_indices, qtype };
+    result.push({ question, options, correct_indices, qtype });
   });
+  return result;
 }
 
 // ════════════════════════════════════════════
@@ -875,51 +1054,50 @@ async function saveLesson() {
     if (type === 'video') {
       const videoFileInput = document.getElementById('f-video-upload');
       let finalVideoUrl = document.getElementById('f-video-url')?.value || null;
-
-      // Prioritize video file upload if a new file is selected
       if (videoFileInput && videoFileInput.files.length > 0) {
         btn.textContent = 'Uploading Video...';
         finalVideoUrl = await uploadFileToServer(videoFileInput.files[0]);
       }
-
       payload.video_url = finalVideoUrl;
       payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
 
     } else if (type === 'document') {
       const docFileInput = document.getElementById('f-doc-upload');
       let finalContent = document.getElementById('f-content')?.value || '';
-
-      // Prioritize document file upload if a new file is selected
       if (docFileInput && docFileInput.files.length > 0) {
         btn.textContent = 'Uploading Document...';
         const docUrl = await uploadFileToServer(docFileInput.files[0]);
-        // Prepend a markdown link to the uploaded document at the top of the content
-        finalContent = `[Nhấn vào đây để xem/tải tài liệu đính kèm](${docUrl})\n\n` + finalContent;
+        finalContent = `[Click here to view/download attachment](${docUrl})\n\n` + finalContent;
       }
-
       payload.content = finalContent;
 
     } else if (type === 'quiz') {
-      payload.questions = collectQuizQuestions();
-      
-      for (let i = 0; i < payload.questions.length; i++) {
-        const q = payload.questions[i];
-        
+      const questions = collectQuizQuestions();
+
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
         if (!q.question.trim()) {
-          toast('warning', 'Lỗi khi lưu Quiz', `Nội dung của câu hỏi số ${i + 1} đang bị bỏ trống.`);
+          toast('warning', 'Quiz Error', `Question #${i + 1} text is empty.`);
           if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
           return;
         }
-        
         if (!q.correct_indices || q.correct_indices.length === 0) {
-          toast('warning', 'Lỗi khi lưu Quiz', `Câu hỏi số ${i + 1} chưa có lựa chọn nào được đánh dấu là đúng! Vui lòng tích chọn ít nhất 1 đáp án.`);
+          toast('warning', 'Quiz Error', `Question #${i + 1} has no correct answer marked.`);
           if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
           return;
         }
       }
+
+      payload.questions = questions;
+
+      // Collect quiz settings
+      payload.quiz_settings = {
+        shuffle_questions: document.getElementById('qs-shuffle-questions')?.checked || false,
+        shuffle_answers:   document.getElementById('qs-shuffle-answers')?.checked   || false,
+      };
     }
 
-    btn.textContent = 'Saving Metadata...';
+    btn.textContent = 'Saving...';
     const res = await fetch(
       `/api/courses/${COURSE_ID}/chapters/${chapterId}/lessons/${lessonId}`,
       { method: 'PUT', headers: authHeaders(), body: JSON.stringify(payload) }
@@ -929,8 +1107,6 @@ async function saveLesson() {
 
     toast('success', 'Saved', 'Lesson saved successfully.');
     setDirty(false);
-
-    localStorage.removeItem(`draft_lesson_${lessonId}`);
 
     const ch = (courseData?.chapters||[]).find(c=>c.chapter_id===chapterId);
     const ls = ch?.lessons?.find(l=>l.lesson_id===lessonId);
@@ -942,39 +1118,41 @@ async function saveLesson() {
     toast('error', 'Save failed', err.message);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = 'Save'; }
+    setDirty(isDirty); // re-apply visual state
   }
 }
 
 // ════════════════════════════════════════════
 //  UPLOAD FILE
 // ════════════════════════════════════════════
+function validateVideoUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.mp3')) {
+    alert('Invalid file type. Please upload a video file, not audio.');
+    input.value = '';
+    return;
+  }
+  setDirty(true);
+}
+
 async function uploadFileToServer(file) {
   const formData = new FormData();
   formData.append('file', file);
-
   const token = localStorage.getItem('token');
-  
   const res = await fetch('/api/upload', {
     method: 'POST',
-    headers: {
-      ...(token ? {'Authorization': `Bearer ${token}`} : {}),
-    },
+    headers: { ...(token ? {'Authorization': `Bearer ${token}`} : {}) },
     body: formData
   });
-
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.detail || "Không thể upload file");
-  }
-
+  if (!res.ok) { const data = await res.json(); throw new Error(data.detail || 'Upload failed'); }
   const data = await res.json();
   return data.file_url;
 }
 
 function previewLesson(lessonId) {
-  // Prevent previewing if there are unsaved changes
   if (isDirty) {
-    toast('warning', 'Unsaved Changes', 'Vui lòng nhấn Save trước khi Preview để thấy nội dung mới nhất.', 4000);
+    toast('warning', 'Unsaved Changes', 'Please Save before previewing to see the latest content.', 4000);
     return;
   }
   window.open(`/courses/${COURSE_ID}/lessons/${lessonId}`, '_blank');
@@ -991,17 +1169,11 @@ function openAddChapterModal() {
 }
 
 async function doAddChapter() {
-  const title   = document.getElementById('new-chapter-title').value.trim();
-  const errBox  = document.getElementById('add-chapter-error');
-  const btn     = document.getElementById('btn-confirm-add-chapter');
+  const title  = document.getElementById('new-chapter-title').value.trim();
+  const errBox = document.getElementById('add-chapter-error');
+  const btn    = document.getElementById('btn-confirm-add-chapter');
   errBox.classList.add('hidden');
-
-  if (!title) {
-    errBox.textContent = 'Please enter a chapter title.';
-    errBox.classList.remove('hidden');
-    return;
-  }
-
+  if (!title) { errBox.textContent = 'Please enter a chapter title.'; errBox.classList.remove('hidden'); return; }
   btn.disabled = true; btn.textContent = 'Adding...';
   try {
     const res = await fetch(`/api/courses/${COURSE_ID}/chapters`, {
@@ -1011,7 +1183,6 @@ async function doAddChapter() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to add chapter');
-
     toast('success', 'Chapter added', `"${title}" created.`);
     closeModal('modal-add-chapter');
     await loadCourse();
@@ -1036,25 +1207,18 @@ function openAddLessonModal(chapterId) {
 }
 
 async function doAddLesson() {
-  const title   = document.getElementById('new-lesson-title').value.trim();
-  const type    = document.querySelector('.type-btn.active')?.dataset.type || 'video';
-  const errBox  = document.getElementById('add-lesson-error');
-  const btn     = document.getElementById('btn-confirm-add-lesson');
+  const title  = document.getElementById('new-lesson-title').value.trim();
+  const type   = document.querySelector('#lesson-type-picker .type-btn.active')?.dataset.type || 'video';
+  const errBox = document.getElementById('add-lesson-error');
+  const btn    = document.getElementById('btn-confirm-add-lesson');
   errBox.classList.add('hidden');
-
-  if (!title) {
-    errBox.textContent = 'Please enter a lesson title.';
-    errBox.classList.remove('hidden');
-    return;
-  }
-
-  const ch     = (courseData?.chapters||[]).find(c=>c.chapter_id===pendingAddLessonChapterId);
-  const order  = ch ? (ch.lessons||[]).length : 0;
-  const body   = { title, type, order };
-  if (type === 'video') { body.video_url = null; body.duration_seconds = null; }
+  if (!title) { errBox.textContent = 'Please enter a lesson title.'; errBox.classList.remove('hidden'); return; }
+  const ch    = (courseData?.chapters||[]).find(c=>c.chapter_id===pendingAddLessonChapterId);
+  const order = ch ? (ch.lessons||[]).length : 0;
+  const body  = { title, type, order };
+  if (type === 'video')    { body.video_url = null; body.duration_seconds = null; }
   if (type === 'document') { body.content = ''; }
-  if (type === 'quiz') { body.questions = []; }
-
+  if (type === 'quiz')     { body.questions = []; }
   btn.disabled = true; btn.textContent = 'Adding...';
   try {
     const res = await fetch(
@@ -1063,11 +1227,9 @@ async function doAddLesson() {
     );
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to add lesson');
-
     toast('success', 'Lesson added', `"${title}" created.`);
     closeModal('modal-add-lesson');
     await loadCourse();
-    // Auto-select new lesson
     if (data.lesson_id) selectLesson(data.lesson_id, pendingAddLessonChapterId);
   } catch (err) {
     errBox.textContent = err.message;
@@ -1088,8 +1250,7 @@ function confirmDeleteChapter(chapterId, title) {
 }
 
 function confirmDeleteLesson(chapterId, lessonId, title) {
-  document.getElementById('delete-confirm-msg').textContent =
-    `Delete lesson "${title}"? This cannot be undone.`;
+  document.getElementById('delete-confirm-msg').innerHTML = `Delete lesson <b>"${title}"</b>? This cannot be undone.`;
   pendingDeleteFn = () => deleteLesson(chapterId, lessonId);
   openModal('modal-confirm-delete');
 }
@@ -1105,10 +1266,7 @@ async function deleteChapter(chapterId) {
     if (currentLesson?.chapterId === chapterId) {
       currentLesson = null;
       document.getElementById('content-panel').innerHTML = `
-        <div class="empty-state-editor">
-          <div class="empty-state-icon">🎯</div>
-          <h3>Select a lesson</h3>
-        </div>`;
+        <div class="empty-state-editor"><div class="empty-state-icon">🎯</div><h3>Select a lesson</h3></div>`;
     }
     await loadCourse();
   } catch (err) { toast('error', 'Delete failed', err.message); }
@@ -1125,10 +1283,7 @@ async function deleteLesson(chapterId, lessonId) {
     if (currentLesson?.lessonId === lessonId) {
       currentLesson = null;
       document.getElementById('content-panel').innerHTML = `
-        <div class="empty-state-editor">
-          <div class="empty-state-icon">🎯</div>
-          <h3>Select a lesson</h3>
-        </div>`;
+        <div class="empty-state-editor"><div class="empty-state-icon">🎯</div><h3>Select a lesson</h3></div>`;
     }
     await loadCourse();
   } catch (err) { toast('error', 'Delete failed', err.message); }
@@ -1145,16 +1300,12 @@ function openEditCourseMeta() {
 }
 
 async function doEditCourseMeta() {
-  const title   = document.getElementById('edit-course-title').value.trim();
-  const desc    = document.getElementById('edit-course-desc').value.trim();
-  const errBox  = document.getElementById('edit-course-error');
-  const btn     = document.getElementById('btn-confirm-edit-course');
+  const title  = document.getElementById('edit-course-title').value.trim();
+  const desc   = document.getElementById('edit-course-desc').value.trim();
+  const errBox = document.getElementById('edit-course-error');
+  const btn    = document.getElementById('btn-confirm-edit-course');
   errBox.classList.add('hidden');
-  if (!title) {
-    errBox.textContent = 'Title is required.';
-    errBox.classList.remove('hidden');
-    return;
-  }
+  if (!title) { errBox.textContent = 'Title is required.'; errBox.classList.remove('hidden'); return; }
   btn.disabled = true; btn.textContent = 'Saving...';
   try {
     const res = await fetch(`/api/courses/${COURSE_ID}`, {
@@ -1164,8 +1315,7 @@ async function doEditCourseMeta() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Update failed');
-    courseData.title       = title;
-    courseData.description = desc;
+    courseData.title = title; courseData.description = desc;
     updateCourseMeta();
     toast('success', 'Updated', 'Course info saved.');
     closeModal('modal-edit-course');
@@ -1178,114 +1328,225 @@ async function doEditCourseMeta() {
 }
 
 // ════════════════════════════════════════════
-//  AUTO-SAVE DRAFT (Lưu nháp vào LocalStorage)
+//  COPY CHAPTER FROM ANOTHER COURSE
 // ════════════════════════════════════════════
-function saveDraftToLocal() {
-  // Chỉ lưu nháp nếu bài học đang được mở và thực sự có thay đổi (isDirty = true)
-  if (!isDirty || !currentLesson) return;
+let selectedChaptersForCopy = [];  // [{courseId, chapter}]
+let copyCourseCache = {};          // {courseId: courseData}
 
-  let payload = { title: document.getElementById('f-title')?.value || '' };
-  
-  if (currentLesson.type === 'video') {
-    payload.video_url = document.getElementById('f-video-url')?.value || null;
-    payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
-  } else if (currentLesson.type === 'document') {
-    payload.content = document.getElementById('f-content')?.value || '';
-  } else if (currentLesson.type === 'quiz') {
-    payload.questions = collectQuizQuestions(); 
+async function openCopyChapterModal() {
+  selectedChaptersForCopy = [];
+  document.getElementById('btn-confirm-copy-chapter').disabled = true;
+  document.getElementById('copy-selected-count').textContent = 'No chapters selected';
+  document.getElementById('copy-chapters-panel').innerHTML = `
+    <div style="color:var(--text-3);text-align:center;padding:60px 20px;">
+      <div style="font-size:32px;margin-bottom:12px;">👈</div>
+      <div>Select a course on the left to see its chapters</div>
+    </div>`;
+  openModal('modal-copy-chapter');
+
+  const listEl    = document.getElementById('copy-courses-list');
+  const loadingEl = document.getElementById('copy-courses-loading');
+  listEl.innerHTML = '';
+  loadingEl.style.display = 'flex';
+
+  try {
+    const res = await fetch('/api/courses/', { headers: authHeaders() });
+    const courses = await res.json();
+    loadingEl.style.display = 'none';
+
+    const others = courses.filter(c => c.id !== COURSE_ID);
+    if (!others.length) {
+      listEl.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px 0;">No other courses available</div>';
+      return;
+    }
+
+    listEl.innerHTML = others.map(c => `
+      <div class="copy-course-item" onclick="selectCopySource('${esc(c.id)}', this)" data-course-id="${esc(c.id)}">
+        <div style="font-size:13px;font-weight:600;">${esc(c.title)}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    loadingEl.textContent = 'Failed to load courses.';
   }
-  
-  // Ghi đè vào LocalStorage với key chứa ID của bài học
-  localStorage.setItem(`draft_lesson_${currentLesson.lessonId}`, JSON.stringify(payload));
 }
 
-// Thiết lập chạy ngầm tự động gom dữ liệu mỗi 5 giây
-setInterval(saveDraftToLocal, 5000);
+async function selectCopySource(courseId, clickedEl) {
+  document.querySelectorAll('.copy-course-item').forEach(el => el.classList.remove('active'));
+  clickedEl.classList.add('active');
+
+  const panelEl = document.getElementById('copy-chapters-panel');
+  panelEl.innerHTML = '<div class="loading" style="padding:20px;">Loading chapters...</div>';
+
+  try {
+    if (!copyCourseCache[courseId]) {
+      const res = await fetch(`/api/courses/${courseId}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error('Failed to load course');
+      copyCourseCache[courseId] = await res.json();
+    }
+    const courseInfo = copyCourseCache[courseId];
+    const chapters   = courseInfo.chapters || [];
+
+    if (!chapters.length) {
+      panelEl.innerHTML = `<div style="color:var(--text-3);padding:20px;">This course has no chapters.</div>`;
+      return;
+    }
+
+    panelEl.innerHTML = `
+      <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px;">
+        ${esc(courseInfo.title)}
+      </div>
+      ${chapters.map(ch => `
+        <label class="copy-chapter-item">
+          <input type="checkbox"
+                 onchange="toggleCopyChapter('${esc(courseId)}', '${esc(ch.chapter_id)}', this.checked)" />
+          <div>
+            <div style="font-weight:600;font-size:13px;">${esc(ch.title)}</div>
+            <div style="font-size:11px;color:var(--text-3);">${(ch.lessons||[]).length} lesson(s)</div>
+          </div>
+        </label>
+      `).join('')}
+    `;
+  } catch (err) {
+    panelEl.innerHTML = `<div style="color:var(--danger);padding:16px;">${esc(err.message)}</div>`;
+  }
+}
+
+function toggleCopyChapter(courseId, chapterId, isChecked) {
+  const course = copyCourseCache[courseId];
+  if (!course) return;
+  if (isChecked) {
+    const chapter = course.chapters.find(c => c.chapter_id === chapterId);
+    if (chapter) selectedChaptersForCopy.push({ courseId, chapter });
+  } else {
+    selectedChaptersForCopy = selectedChaptersForCopy.filter(x => x.chapter.chapter_id !== chapterId);
+  }
+  const count = selectedChaptersForCopy.length;
+  document.getElementById('copy-selected-count').textContent =
+    count === 0 ? 'No chapters selected' : `${count} chapter(s) selected`;
+  document.getElementById('btn-confirm-copy-chapter').disabled = count === 0;
+}
+
+async function doCopyChapters() {
+  if (!selectedChaptersForCopy.length) return;
+  const btn = document.getElementById('btn-confirm-copy-chapter');
+  btn.disabled = true; btn.textContent = 'Copying...';
+
+  let copied = 0, failed = 0;
+
+  for (const { chapter } of selectedChaptersForCopy) {
+    try {
+      // Create the chapter
+      const chRes = await fetch(`/api/courses/${COURSE_ID}/chapters`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ title: chapter.title + ' (copy)', order: 0 })
+      });
+      if (!chRes.ok) throw new Error('Failed to create chapter');
+      const chData = await chRes.json();
+      const newChapterId = chData.chapter_id;
+
+      // Create each lesson inside that chapter
+      for (const lesson of (chapter.lessons || [])) {
+        if (lesson.is_deleted) continue;
+        // Strip lesson_id so a new one is assigned server-side
+        const { lesson_id, is_deleted, ...lessonBody } = lesson;
+        await fetch(`/api/courses/${COURSE_ID}/chapters/${newChapterId}/lessons`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(lessonBody)
+        });
+      }
+      copied++;
+    } catch {
+      failed++;
+    }
+  }
+
+  closeModal('modal-copy-chapter');
+  selectedChaptersForCopy = [];
+  copyCourseCache = {};  // invalidate cache
+
+  if (copied > 0) toast('success', 'Chapters copied', `${copied} chapter(s) copied successfully.`);
+  if (failed > 0) toast('error', 'Some failed', `${failed} chapter(s) could not be copied.`);
+  await loadCourse();
+  btn.disabled = false; btn.textContent = 'Copy Selected';
+}
 
 // ════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  // Modal close on overlay click
+  // Close modals on overlay click
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', e => {
-      if (e.target === overlay) closeModal(overlay.id);
-    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(overlay.id); });
   });
 
-  // Confirm buttons
   document.getElementById('btn-add-chapter').addEventListener('click', openAddChapterModal);
   document.getElementById('btn-confirm-add-chapter').addEventListener('click', doAddChapter);
   document.getElementById('btn-confirm-add-lesson').addEventListener('click', doAddLesson);
   document.getElementById('btn-confirm-delete').addEventListener('click', () => pendingDeleteFn?.());
   document.getElementById('btn-confirm-edit-course').addEventListener('click', doEditCourseMeta);
   document.getElementById('btn-edit-course-meta').addEventListener('click', openEditCourseMeta);
+  document.getElementById('btn-open-copy-chapter').addEventListener('click', openCopyChapterModal);
 
-  // Enter key in modals
-  document.getElementById('new-chapter-title').addEventListener('keydown', e => {
-    if (e.key === 'Enter') doAddChapter();
-  });
-  document.getElementById('new-lesson-title').addEventListener('keydown', e => {
-    if (e.key === 'Enter') doAddLesson();
-  });
+  document.getElementById('new-chapter-title').addEventListener('keydown', e => { if (e.key === 'Enter') doAddChapter(); });
+  document.getElementById('new-lesson-title').addEventListener('keydown', e => { if (e.key === 'Enter') doAddLesson(); });
 
-  // Lesson type picker
+  // Lesson type picker in modal
   document.getElementById('lesson-type-picker').addEventListener('click', e => {
     const btn = e.target.closest('.type-btn');
     if (!btn) return;
-    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#lesson-type-picker .type-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   });
 
-  // Search
-  document.getElementById('lesson-search').addEventListener('input', e => {
-    renderTree(e.target.value);
-  });
+  document.getElementById('lesson-search').addEventListener('input', e => renderTree(e.target.value));
 
-  // Unsaved changes warning
-  window.addEventListener('beforeunload', e => {
-    if (isDirty) { e.preventDefault(); e.returnValue = ''; }
-  });
+  window.addEventListener('beforeunload', e => { if (isDirty) { e.preventDefault(); e.returnValue = ''; } });
 
-  // Load!
   loadCourse();
 });
 </script>
 
 <style>
 @keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%   { opacity: 1; }
+  50%  { opacity: 0.3; }
   100% { opacity: 1; }
 }
-/* Freeze pane cho thanh công cụ của Quiz Editor */
-.quiz-sticky-toolbar {
-  position: sticky;
-  top: -32px; /* Đẩy sát lên mép trên */
-  background: var(--bg);
-  z-index: 100;
-  padding: 32px 0 16px 0;
-  margin-top: -32px;
-  margin-bottom: 20px;
-  border-bottom: 1px dashed var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+
+/* ── Height chain ── */
+.app-container  { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.editor-layout  { flex: 1; min-height: 0; }
+.editor-content { padding: 0 !important; overflow: hidden !important; display: flex; flex-direction: column; }
+#content-panel  { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lesson-panel   { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lesson-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 36px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; background: var(--bg); z-index: 10;
 }
-.editor-sidebar {position: sticky; top: var(--navbar-h, 64px); height: calc(100vh - var(--navbar-h, 64px)); z-index: 100;}
-.sidebar-footer {padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: white; margin-top: auto; position: sticky; bottom: 0; z-index: 10; }
-/* ── Editor-specific extra styles ── */
+.lesson-panel-actions { display: flex; gap: 8px; }
+.lesson-form { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 36px 48px; }
+.empty-state-editor { padding: 32px 36px; }
+
+/* ── Sidebar ── */
+.editor-sidebar { position: sticky; top: var(--navbar-h, 64px); height: calc(100vh - var(--navbar-h, 64px)); z-index: 100; }
+.sidebar-footer {
+  padding: 10px 12px; border-top: 1px solid var(--border);
+  display: flex; gap: 6px; flex-wrap: wrap;
+  background: white; margin-top: auto;
+  position: sticky; bottom: 0; z-index: 10;
+}
+.sidebar-footer a { text-decoration: none; }
 .sidebar-title-wrap { flex: 1; min-width: 0; }
 .sidebar-subtitle { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
 .sidebar-search { padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .sidebar-search input { width: 100%; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; background: var(--bg); }
-.sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
-.sidebar-footer a { text-decoration: none; }
 
+/* ── Tree ── */
 .tree-empty { padding: 24px 16px; text-align: center; color: var(--text-3); font-size: 13px; }
 .tree-empty p { margin-bottom: 12px; }
-
 .tree-chapter-header { display: flex; align-items: center; }
 .tree-chapter-count { font-size: 10px; font-family: var(--font-mono); color: var(--text-4); background: var(--bg); padding: 1px 5px; border-radius: 99px; flex-shrink: 0; }
 .tree-chapter-actions { opacity: 0; transition: opacity 0.15s; margin-left: 4px; }
@@ -1294,148 +1555,197 @@ document.addEventListener('DOMContentLoaded', () => {
 .tree-action-btn:hover { background: var(--danger-light); color: var(--danger); }
 .tree-lesson .tree-action-btn { opacity: 0; }
 .tree-lesson:hover .tree-action-btn { opacity: 1; }
-
 .drag-handle { font-size: 12px; color: var(--text-4); cursor: grab; padding: 0 4px; flex-shrink: 0; }
 .drag-handle:active { cursor: grabbing; }
 .dragging { opacity: 0.4; }
 .drag-over { outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 
-.lesson-icon-video { background: var(--primary-light) !important; color: var(--primary) !important; }
-.lesson-icon-quiz  { background: var(--warning-light) !important; color: #92400E !important; }
+/* ── Lesson type icons — item 4: Video badge clearly purple ── */
+.lesson-icon-video    { background: #EDE9FE !important; color: #6D28D9 !important; }  /* deep purple */
+.lesson-icon-quiz     { background: var(--warning-light) !important; color: #92400E !important; }
 .lesson-icon-document { background: var(--success-light) !important; color: var(--success) !important; }
 
-/* Lesson panel */
-/* ── HEIGHT CHAIN FIX ──────────────────────────────────────
-   Chain: body(flex-col) → .app-container(flex:1) →
-          .editor-layout(flex:1) → .editor-content(flex-col) →
-          #content-panel(flex:1) → .lesson-panel(flex:1)
-   Only .lesson-form scrolls — header is naturally frozen.
-   ────────────────────────────────────────────────────────── */
-
-/* 1. Make main fill remaining viewport height */
-.app-container {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 2. Editor layout fills app-container */
-.editor-layout {
-  flex: 1;
-  min-height: 0;
-}
-
-/* 3. Right panel: no padding, no scroll — becomes a flex column */
-.editor-content {
-  padding: 0 !important;
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 4. JS-injected wrapper must join the flex chain */
-#content-panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 5. Lesson panel fills content-panel */
-.lesson-panel {
-  flex: 1;
-  min-height: 0;
-  height: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 6. Header: naturally pinned — no sticky needed.
-      Horizontal padding moved here from .editor-content */
-.lesson-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 36px;
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--bg);
-  z-index: 10;
-}
-
-.lesson-panel-actions { display: flex; gap: 8px; }
-
-/* 7. ONLY this element scrolls now */
-.lesson-form {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 24px 36px 48px;
-}
-
-/* 8. Empty/loading states keep proper spacing */
-.empty-state-editor {
-  padding: 32px 36px;
-}
-
+/* ── Video / doc / quiz lesson forms ── */
 .video-preview { margin-top: 12px; }
 .video-preview-label { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 
-/* Quiz editor */
-.quiz-question-block {
-  background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 16px; margin-bottom: 12px;
+/* ── Quiz: Settings panel (right column) ── */
+.quiz-settings-panel {
+  width: 240px;
+  flex-shrink: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
 }
+.quiz-settings-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 16px;
+}
+.quiz-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.quiz-setting-row:last-of-type { border-bottom: none; }
+.quiz-setting-info { flex: 1; min-width: 0; }
+.quiz-setting-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.quiz-setting-desc  { font-size: 11px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
+
+/* Toggle switch */
+.quiz-toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+.quiz-toggle input { opacity: 0; width: 0; height: 0; }
+.quiz-toggle-slider {
+  position: absolute; cursor: pointer;
+  inset: 0; background: var(--border-md, #D1D5DB);
+  border-radius: 99px; transition: background 0.2s;
+}
+.quiz-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  left: 3px; bottom: 3px;
+  background: white; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.quiz-toggle input:checked + .quiz-toggle-slider { background: var(--success); }
+.quiz-toggle input:checked + .quiz-toggle-slider::before { transform: translateX(16px); }
+
+.quiz-settings-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.quiz-stats-item { text-align: center; flex: 1; }
+.quiz-stats-val { display: block; font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.04em; }
+.quiz-stats-lbl { font-size: 11px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Quiz: Insert zone dividers between questions ── */
+.quiz-insert-zone-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.quiz-insert-zone-divider:hover { opacity: 1; }
+.quiz-editor:hover .quiz-insert-zone-divider { opacity: 0.4; }
+.quiz-editor:hover .quiz-insert-zone-divider:hover { opacity: 1; }
+.quiz-insert-line { flex: 1; height: 2px; background: var(--primary); border-radius: 99px; opacity: 0.4; }
+.quiz-insert-btn {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  background: white;
+  color: var(--primary);
+  font-size: 16px; font-weight: 700; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.quiz-insert-btn:hover { background: var(--primary); color: white; }
+
+/* Empty quiz insert zone */
+.quiz-insert-zone-empty {
+  border: 2px dashed var(--border-md, #D1D5DB);
+  border-radius: var(--radius-lg);
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.quiz-insert-zone-empty:hover { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+
+/* ── Quiz: Question block ── */
+.quiz-question-block {
+  background: white; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px; margin-bottom: 4px;
+  transition: box-shadow 0.15s;
+}
+.quiz-question-block:hover { box-shadow: var(--shadow-sm); }
+.quiz-question-block.drag-over { outline: 2px dashed var(--primary); outline-offset: -2px; }
+.quiz-drag-handle {
+  font-size: 14px; color: var(--text-4);
+  cursor: grab; padding: 0 4px; flex-shrink: 0;
+}
+.quiz-drag-handle:active { cursor: grabbing; }
 .quiz-question-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.quiz-q-num { width: 24px; height: 24px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.quiz-q-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary-light); color: var(--primary);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 .quiz-q-text { flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 14px; }
-.quiz-qtype-select { padding: 5px 8px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; color: var(--text-2); }
+.quiz-qtype-picker-wrapper { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-left: 34px; }
+.quiz-label-sm { display: block; font-size: 12px; color: var(--text-3); font-weight: 600; }
 .quiz-option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.quiz-option-row input[type=radio] { flex-shrink: 0; accent-color: var(--success); cursor: pointer; }
+.quiz-option-row input[type=radio],
+.quiz-option-row input[type=checkbox] { flex-shrink: 0; accent-color: var(--success); cursor: pointer; }
 .quiz-option-input { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: var(--radius); font-size: 13px; }
 .btn-icon-del { border: none; background: none; cursor: pointer; color: var(--text-4); font-size: 14px; padding: 2px 6px; border-radius: 4px; }
 .btn-icon-del:hover { background: var(--danger-light); color: var(--danger); }
 
-/* Lesson type picker */
-.lesson-type-picker { display: flex; gap: 8px; }
-.type-btn { padding: 8px 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: white; cursor: pointer; font-size: 13px; font-weight: 500; font-family: var(--font); color: var(--text-2); transition: var(--trans-fast); }
+/* ── Lesson type picker ── */
+.lesson-type-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.type-btn {
+  padding: 8px 16px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  background: white; cursor: pointer; font-size: 13px; font-weight: 500;
+  font-family: var(--font); color: var(--text-2); transition: var(--trans-fast);
+}
 .type-btn:hover { border-color: var(--primary); color: var(--primary); }
 .type-btn.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
-.empty-state-editor { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; color: var(--text-2); gap: 12px; }
-.empty-state-editor h3 { font-size: 20px; font-weight: 700; color: var(--text); }
-.empty-state-editor p { font-size: 14px; color: var(--text-3); }
-.editor-sticky-panel {
-  position: sticky;
-  top: -32px;
-  background: var(--bg);
-  z-index: 100;
-  padding: 32px 0 16px 0;
-  margin-top: -32px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 12px 12px -12px rgba(0,0,0,0.05);
+/* ── Empty state ── */
+.empty-state-editor {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 60vh; text-align: center;
+  color: var(--text-2); gap: 12px;
 }
-</style>
+.empty-state-editor h3 { font-size: 20px; font-weight: 700; color: var(--text); }
+.empty-state-editor p  { font-size: 14px; color: var(--text-3); }
 
-<div class="modal-overlay" id="modal-confirm-discard" style="display:none; z-index: 9999;">
-  <div class="modal-content" style="max-width: 420px; padding: 0;">
-    <div class="modal-header">
-      <h2 class="modal-title" style="color: var(--warning);">⚠️ Cảnh báo</h2>
-      <button type="button" class="modal-close" onclick="resolveDiscard(false)">×</button>
-    </div>
-    <div class="modal-body" style="padding: 24px;">
-      <p style="color: var(--text-2); margin-bottom: 24px; font-size: 15px; line-height: 1.6;">
-        Bạn đang có các thay đổi chưa được lưu (Save). Nếu chuyển sang bài khác, những thay đổi này sẽ <b>bị mất hoàn toàn</b>. Bạn có chắc chắn muốn tiếp tục?
-      </p>
-      <div style="display: flex; gap: 12px; justify-content: flex-end;">
-        <button class="btn btn-ghost" onclick="resolveDiscard(false)">Không, ở lại</button>
-        <button class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);" onclick="resolveDiscard(true)">Có, hủy thay đổi</button>
-      </div>
-    </div>
-  </div>
-</div>
+/* ── Copy chapter modal ── */
+.copy-course-item {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background 0.1s;
+  border: 1.5px solid transparent;
+}
+.copy-course-item:hover { background: var(--bg); }
+.copy-course-item.active { background: var(--primary-light); border-color: var(--primary); }
+.copy-chapter-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.copy-chapter-item:hover { border-color: var(--primary); background: var(--primary-light); }
+.copy-chapter-item input[type=checkbox] { margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; }
+</style>
 {% endblock %}

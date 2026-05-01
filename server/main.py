@@ -2,6 +2,7 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import connect_db, close_db, get_db
@@ -9,6 +10,44 @@ from app.routes import auth, courses, pages, upload, stress_test
 from app.routes.progress import router as progress_router
 from app.routes.stats import router as stats_router
 
+from starlette.middleware.base import BaseHTTPMiddleware
+
+ip_request_counts = {}
+
+class SimpleRateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        current_time = time.time()
+        
+        # CẤU HÌNH Ở ĐÂY: 100 request trong vòng 60 giây
+        RATE_LIMIT = 100
+        TIME_WINDOW = 60
+
+        if client_ip in ip_request_counts:
+            count, start_time = ip_request_counts[client_ip]
+            
+            # Đã qua 60 giây -> Xóa án tích, đếm lại từ đầu
+            if current_time - start_time > TIME_WINDOW:
+                ip_request_counts[client_ip] = (1, current_time)
+            
+            # Spam quá giới hạn -> Chặn đứng
+            elif count >= RATE_LIMIT:
+                m, s = divmod(TIME_WINDOW, 60)
+                return JSONResponse(
+                    status_code=429, 
+                    content={"detail": f"Bạn thao tác quá nhanh! Vui lòng đợi{f' {m} phút' if m else ''}{f' {s} giây' if s else ''} rồi thử lại (429 Too Many Requests)"}
+                )
+            
+            # Bình thường -> Tăng số lần đếm lên 1
+            else:
+                ip_request_counts[client_ip] = (count + 1, start_time)
+        else:
+            # Người mới lần đầu truy cập
+            ip_request_counts[client_ip] = (1, current_time)
+
+        # Cho phép đi tiếp vào trong hệ thống
+        response = await call_next(request)
+        return response
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,6 +69,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="E-Learning CMS", lifespan=lifespan)
+app.add_middleware(SimpleRateLimitMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────
 app.add_middleware(

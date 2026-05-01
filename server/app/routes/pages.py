@@ -144,3 +144,8 @@ async def stats_page(request: Request):
 @router.get("/my-progress", response_class=HTMLResponse)
 async def my_progress_page(request: Request):
     return templates.TemplateResponse("my_progress.html", {"request": request})
+
+
+@router.get("/progress", response_class=HTMLResponse)
+async def progress_page(request: Request):
+    return templates.TemplateResponse("my_progress.html", {"request": request})

@@ -114,7 +114,7 @@ function authHeaders() {
   }
 
   // Force redirect for protected paths when not authenticated
-  const protectedPaths = ['/courses/new', '/edit', '/analytics', '/my-progress'];
+  const protectedPaths = ['/courses/new', '/edit', '/analytics', '/my-progress', '/progress'];
   if (!token && protectedPaths.some(p => path.includes(p))) {
     window.location.replace('/login');
   }
@@ -177,6 +177,7 @@ function initNavbar() {
   } else {
     navLinks.innerHTML = `
       <a href="/courses">Courses</a>
+      <a href="/progress">Progress</a>
       <a href="#" id="logout-btn">Logout</a>
     `;
   }

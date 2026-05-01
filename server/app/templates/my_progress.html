@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Progress - E-Learning CMS{% endblock %}
+
+{% block content %}
+<div class="courses-page">
+  <div class="courses-hero-new">
+    <div>
+      <h1 class="courses-hero-title">Learning Progress</h1>
+      <p class="courses-hero-subtitle">Track your course completion and quiz performance.</p>
+    </div>
+  </div>
+
+  <div class="courses-header-bar">
+    <div>
+      <h2 class="courses-section-title">Your progress</h2>
+      <p id="progress-count" class="courses-count-label">Loading...</p>
+    </div>
+  </div>
+
+  <div class="course-grid-new" id="progress-grid"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function progressEscHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderProgressCard(course, progress) {
+  const pct = Number(progress.completion_percentage || 0);
+  const done = Number(progress.completed_lessons_count || 0);
+  const total = Number(progress.total_lessons_in_course || 0);
+  const avgScore = progress.avg_quiz_score == null ? 'N/A' : `${progress.avg_quiz_score}%`;
+
+  return `
+    <div class="course-card-new" onclick="window.location.href='/courses/${course.id}'">
+      <div class="course-card-accent blue"></div>
+      <div class="course-card-body-new">
+        <div>
+          <h3 class="course-card-title-new">${progressEscHtml(course.title)}</h3>
+          <p class="course-card-desc-new">${progressEscHtml(course.description || 'No description')}</p>
+        </div>
+        <div style="margin-top: 16px;">
+          <div class="lv-progress-track" style="margin-bottom: 10px;">
+            <div class="lv-progress-fill" style="width: ${Math.max(0, Math.min(100, pct))}%"></div>
+          </div>
+          <div class="course-card-stats">
+            <span class="stat">${pct}% complete</span>
+            <span class="stat">${done}/${total} lessons</span>
+            <span class="stat">Quiz ${avgScore}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadMyProgress() {
+  const grid = document.getElementById('progress-grid');
+  const countEl = document.getElementById('progress-count');
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    window.location.replace('/login');
+    return;
+  }
+
+  grid.innerHTML = '<div class="an-loading">Loading progress...</div>';
+
+  try {
+    const coursesRes = await fetch('/api/courses/');
+    if (!coursesRes.ok) throw new Error('Could not load courses');
+    const courses = await coursesRes.json();
+
+    const progressItems = await Promise.all(
+      courses.map(async (course) => {
+        const res = await fetch(`/api/progress/${course.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        const progress = await res.json();
+        return { course, progress };
+      })
+    );
+
+    const visibleItems = progressItems.filter(Boolean);
+    countEl.textContent = `${visibleItems.length} courses`;
+
+    if (visibleItems.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state-block">
+          <h3>No progress yet</h3>
+          <p>Open a course and complete lessons to start tracking progress.</p>
+          <a class="btn btn-primary" href="/courses">Browse courses</a>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = visibleItems
+      .map(({ course, progress }) => renderProgressCard(course, progress))
+      .join('');
+  } catch (err) {
+    countEl.textContent = 'Could not load progress';
+    grid.innerHTML = `
+      <div class="empty-state-block">
+        <h3>Could not load progress</h3>
+        <p>${progressEscHtml(err.message)}</p>
+        <button class="btn btn-secondary" onclick="loadMyProgress()">Retry</button>
+      </div>
+    `;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadMyProgress);
+</script>
+{% endblock %}

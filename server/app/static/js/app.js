@@ -48,9 +48,38 @@ function isTokenExpired() {
  */
 function handleExpiredSession() {
   localStorage.removeItem('token');
-  if (window.location.pathname !== '/login') {
+  
+  if (window.location.pathname === '/login') return;
+
+  // Nếu trang chưa tải xong (ví dụ user vừa F5 lại trang lúc token đã chết)
+  // -> Điều hướng thẳng về login cho mượt, tránh hiện modal trên trang trắng
+  if (document.readyState === 'loading') {
     window.location.replace('/login');
+  } else {
+    // Nếu user đang thao tác giữa chừng trên trang -> Hiện Modal
+    showExpiredModal();
   }
+}
+
+function showExpiredModal() {
+  // Tránh hiện nhiều modal chồng chéo nhau
+  if (document.getElementById('session-expired-modal')) return;
+
+  const modalHtml = `
+    <div class="modal-overlay" id="session-expired-modal" style="display:flex; z-index: 99999; background: rgba(0,0,0,0.65);">
+      <div class="modal-content" style="max-width: 400px; padding: 32px 24px; text-align: center; border-top: 4px solid var(--danger);">
+        <div style="font-size: 60px; margin-bottom: 16px;">⏱️</div>
+        <h2 style="color: var(--danger); margin-top: 0; margin-bottom: 12px; font-size: 22px;">Phiên đã hết hạn</h2>
+        <p style="color: var(--text-2); font-size: 15px; margin-bottom: 28px; line-height: 1.5;">
+          Vì lý do bảo mật, phiên đăng nhập của bạn đã kết thúc. Vui lòng đăng nhập lại để tiếp tục công việc.
+        </p>
+        <button class="btn btn-primary" style="width: 100%; justify-content: center; font-size: 16px; padding: 12px;" onclick="window.location.replace('/login')">
+          Đồng ý
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
 function logout(e) {

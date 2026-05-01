@@ -7,7 +7,7 @@
   <!-- ═══ LEFT: Course tree sidebar ═══ -->
   <aside class="editor-sidebar" id="editor-sidebar">
     <div class="sidebar-header" style="display: block;">
-      <a href="/courses" style="font-size: 12px; color: var(--text-3); text-decoration: none; display: inline-block; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-3)'">
+      <a href="/courses" style="font-size: 14px; color: var(--text-3); text-decoration: none; display: inline-block; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-3)'">
         ← Quay lại danh sách khóa học
       </a>
       <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -46,9 +46,9 @@
     <div id="content-panel">
       <div class="empty-state-editor">
         <div class="empty-state-icon">🎯</div>
-        <h3>Select a lesson</h3>
+        <h1>Select a lesson</h1>
         <p>Click any lesson in the left panel to view or edit its content.</p>
-        <p class="muted" style="font-size:12px;margin-top:8px;">Drag lessons to reorder them.</p>
+        <p class="muted" style="font-size:12px;margin-top:1px;">Drag lessons to reorder them.</p>
       </div>
     </div>
   </section>
@@ -557,6 +557,32 @@ async function selectLesson(lessonId, chapterId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load lesson');
+
+    const draftStr = localStorage.getItem(`draft_lesson_${lessonId}`);
+    if (draftStr) {
+      try {
+        const draft = JSON.parse(draftStr);
+        // Ghi đè dữ liệu nháp lên dữ liệu gốc của Server
+        data.title = draft.title ?? data.title;
+        if (data.type === 'video') {
+            data.video_url = draft.video_url ?? data.video_url;
+            data.duration_seconds = draft.duration_seconds ?? data.duration_seconds;
+        } else if (data.type === 'document') {
+            data.content = draft.content ?? data.content;
+        } else if (data.type === 'quiz') {
+            data.questions = draft.questions ?? data.questions;
+        }
+        
+        // Hiện thông báo và bật cờ đỏ (isDirty) để người dùng biết họ cần Save
+        setTimeout(() => {
+            toast('info', 'Đã khôi phục bản nháp', 'Dữ liệu đang gõ dở từ phiên trước đã được khôi phục. Hãy kiểm tra và bấm Save!', 6000);
+            setDirty(true);
+        }, 500);
+      } catch (e) {
+        console.error("Lỗi khi đọc bản nháp:", e);
+      }
+    }
+
     currentLesson.type  = data.type;
     currentLesson.title = data.title;
     renderLessonPanel(data, chapterId);
@@ -904,6 +930,8 @@ async function saveLesson() {
     toast('success', 'Saved', 'Lesson saved successfully.');
     setDirty(false);
 
+    localStorage.removeItem(`draft_lesson_${lessonId}`);
+
     const ch = (courseData?.chapters||[]).find(c=>c.chapter_id===chapterId);
     const ls = ch?.lessons?.find(l=>l.lesson_id===lessonId);
     if (ls) { ls.title = title; ls.type = type; }
@@ -1053,8 +1081,8 @@ async function doAddLesson() {
 //  DELETE
 // ════════════════════════════════════════════
 function confirmDeleteChapter(chapterId, title) {
-  document.getElementById('delete-confirm-msg').textContent =
-    `Delete chapter "${title}" and all its lessons? This cannot be undone.`;
+  document.getElementById('delete-confirm-msg').innerHTML =
+    `Delete chapter <b>"${title}"</b> and all of its lessons? This cannot be undone!`;
   pendingDeleteFn = () => deleteChapter(chapterId);
   openModal('modal-confirm-delete');
 }
@@ -1148,6 +1176,31 @@ async function doEditCourseMeta() {
     btn.disabled = false; btn.textContent = 'Save Changes';
   }
 }
+
+// ════════════════════════════════════════════
+//  AUTO-SAVE DRAFT (Lưu nháp vào LocalStorage)
+// ════════════════════════════════════════════
+function saveDraftToLocal() {
+  // Chỉ lưu nháp nếu bài học đang được mở và thực sự có thay đổi (isDirty = true)
+  if (!isDirty || !currentLesson) return;
+
+  let payload = { title: document.getElementById('f-title')?.value || '' };
+  
+  if (currentLesson.type === 'video') {
+    payload.video_url = document.getElementById('f-video-url')?.value || null;
+    payload.duration_seconds = parseInt(document.getElementById('f-duration')?.value) || null;
+  } else if (currentLesson.type === 'document') {
+    payload.content = document.getElementById('f-content')?.value || '';
+  } else if (currentLesson.type === 'quiz') {
+    payload.questions = collectQuizQuestions(); 
+  }
+  
+  // Ghi đè vào LocalStorage với key chứa ID của bài học
+  localStorage.setItem(`draft_lesson_${currentLesson.lessonId}`, JSON.stringify(payload));
+}
+
+// Thiết lập chạy ngầm tự động gom dữ liệu mỗi 5 giây
+setInterval(saveDraftToLocal, 5000);
 
 // ════════════════════════════════════════════
 //  INIT
@@ -1375,7 +1428,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <button type="button" class="modal-close" onclick="resolveDiscard(false)">×</button>
     </div>
     <div class="modal-body" style="padding: 24px;">
-      <p style="color: var(--text-2); margin-bottom: 24px; font-size: 14px; line-height: 1.6;">
+      <p style="color: var(--text-2); margin-bottom: 24px; font-size: 15px; line-height: 1.6;">
         Bạn đang có các thay đổi chưa được lưu (Save). Nếu chuyển sang bài khác, những thay đổi này sẽ <b>bị mất hoàn toàn</b>. Bạn có chắc chắn muốn tiếp tục?
       </p>
       <div style="display: flex; gap: 12px; justify-content: flex-end;">

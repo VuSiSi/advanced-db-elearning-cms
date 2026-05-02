@@ -24,6 +24,9 @@ The backend exposes JSON APIs under `/api/*` and also serves the HTML pages used
 
 ```text
 advanced-db-elearning-cms/
+|-- load-tests/
+|   `-- k6/
+|       `-- rate-limit.js       # k6 test for rate-limit behavior
 |-- server/
 |   |-- main.py                  # FastAPI application entrypoint
 |   |-- requirements.txt
@@ -56,6 +59,7 @@ advanced-db-elearning-cms/
 |           `-- login.html
 `-- docs/
     |-- api_list.md
+    |-- ddos_k6.md
     |-- schema_notes.md
     |-- performance_eval.md
     `-- test.md
@@ -197,6 +201,25 @@ python test_schema.py
 ```
 
 This script inserts sample users, courses, and progress documents, verifies the structure, then removes the test data.
+
+## Testing Rate Limit Behavior with k6
+
+The application includes a k6 load test that verifies the basic anti-abuse rate limit in `server/main.py`. The test sends enough requests to trigger `429 Too Many Requests` after the configured limit.
+
+Start the backend:
+
+```bash
+cd server
+uvicorn main:app --reload
+```
+
+Run the k6 script from the repository root:
+
+```bash
+k6 run load-tests/k6/rate-limit.js
+```
+
+See [`docs/ddos_k6.md`](docs/ddos_k6.md) for the mechanism, expected metrics, and production limitations.
 
 ## Notes
 

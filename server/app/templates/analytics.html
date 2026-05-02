@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Analytics — {{ course.title if course else "Course" }}{% endblock %}
+{% block title %}Analytics - {{ course.title if course else "Course" }}{% endblock %}
 
 {% block content %}
 <div class="analytics-layout">
 
   <div class="an-header">
     <div class="an-header-inner">
-      <a class="an-back" href="/courses">← Back to Courses</a>
+      <a class="an-back" href="/courses">&larr; Back to Courses</a>
       <div class="an-header-title">
         <h1 id="an-course-title">{{ course.title if course else "Course Analytics" }}</h1>
         <span class="an-subtitle">Instructor Dashboard</span>
@@ -16,30 +16,30 @@
 
   <div class="an-cards" id="an-cards">
     <div class="an-card an-card-primary">
-      <div class="an-card-icon">📊</div>
+      <div class="an-card-icon">%</div>
       <div class="an-card-body">
-        <div class="an-card-value" id="an-completion-rate">—</div>
+        <div class="an-card-value" id="an-completion-rate">-</div>
         <div class="an-card-label">Avg Completion Rate</div>
       </div>
     </div>
     <div class="an-card">
-      <div class="an-card-icon">👥</div>
+      <div class="an-card-icon">#</div>
       <div class="an-card-body">
-        <div class="an-card-value" id="an-total-students">—</div>
+        <div class="an-card-value" id="an-total-students">-</div>
         <div class="an-card-label">Active Students</div>
       </div>
     </div>
     <div class="an-card">
-      <div class="an-card-icon">⭐</div>
+      <div class="an-card-icon">*</div>
       <div class="an-card-body">
-        <div class="an-card-value" id="an-avg-score">—</div>
+        <div class="an-card-value" id="an-avg-score">-</div>
         <div class="an-card-label">Avg Quiz Score</div>
       </div>
     </div>
     <div class="an-card">
-      <div class="an-card-icon">📚</div>
+      <div class="an-card-icon">L</div>
       <div class="an-card-body">
-        <div class="an-card-value" id="an-total-lessons">—</div>
+        <div class="an-card-value" id="an-total-lessons">-</div>
         <div class="an-card-label">Total Lessons</div>
       </div>
     </div>
@@ -104,19 +104,18 @@ async function loadAnalytics() {
     renderAnalytics(data);
   } catch (err) {
     document.getElementById('an-lesson-list').innerHTML =
-      `<p class="an-error">⚠ ${err.message}</p>`;
+      `<p class="an-error">Error: ${escHtml(err.message)}</p>`;
   }
 }
 
 function renderAnalytics(data) {
-  // FIX: API trả về avg_completion_pct, không phải avg_completion_rate
   const rate = data.avg_completion_pct ?? data.avg_completion_rate ?? data.completion_rate ?? 0;
   const rateDisplay = typeof rate === 'number' ? `${rate.toFixed(1)}%` : rate;
 
   setText('an-completion-rate', rateDisplay);
-  setText('an-total-students', data.total_students ?? '—');
+  setText('an-total-students', data.total_students ?? '-');
   setText('an-avg-score', data.avg_quiz_score != null ? `${data.avg_quiz_score.toFixed(1)}%` : 'N/A');
-  setText('an-total-lessons', data.total_lessons ?? '—');
+  setText('an-total-lessons', data.total_lessons ?? '-');
 
   const pct = parseFloat(rate) || 0;
   const offset = 314.16 - (pct / 100) * 314.16;
@@ -127,36 +126,53 @@ function renderAnalytics(data) {
   }
   setText('an-donut-label', `${Math.round(pct)}%`);
 
-  // Lesson stats — API trả về object {lesson_id: count}, không phải array
   const container = document.getElementById('an-lesson-list');
-  const lessonStats = data.lesson_stats;
+  const lessonStats = data.per_lesson_stats || [];
 
-  if (!lessonStats || Object.keys(lessonStats).length === 0) {
+  if (!lessonStats.length) {
     container.innerHTML = '<p class="an-empty">No lesson data available.</p>';
     return;
   }
 
-  const totalStudents = data.total_students || 1;
-  container.innerHTML = Object.entries(lessonStats).map(([lessonId, count]) => {
+  const totalStudents = data.total_students || 0;
+  container.innerHTML = lessonStats.map((lesson) => {
+    const count = lesson.completed_count || 0;
     const pctVal = totalStudents > 0 ? Math.round((count / totalStudents) * 100) : 0;
+    const typeClass = lesson.type === 'video' ? 'video' : lesson.type === 'quiz' ? 'quiz' : 'doc';
+    const completedStudents = lesson.completed_students || [];
+    const studentNames = completedStudents.length
+      ? completedStudents.map((student) => `
+          <span class="an-student-chip" title="${escAttr(student.email || '')}">
+            ${escHtml(student.full_name || student.email || 'Unknown student')}
+          </span>
+        `).join('')
+      : '<span class="an-empty-inline">No students completed yet</span>';
+
     return `
       <div class="an-lesson-row">
         <div class="an-lesson-info">
-          <span class="an-lesson-icon doc" aria-hidden="true">≡</span>
+          <span class="an-lesson-icon ${typeClass}" aria-hidden="true">${lessonIcon(lesson.type)}</span>
           <div class="an-lesson-text">
-            <span class="an-lesson-name">${escHtml(lessonId)}</span>
+            <span class="an-lesson-name">${escHtml(lesson.title || 'Untitled lesson')}</span>
             <span class="an-lesson-score">${count} student(s) completed</span>
+            <div class="an-student-list">${studentNames}</div>
           </div>
         </div>
         <div class="an-lesson-bar-wrap">
           <div class="an-lesson-bar">
-            <div class="an-lesson-bar-fill doc" style="width: ${pctVal}%"></div>
+            <div class="an-lesson-bar-fill ${typeClass}" style="width: ${pctVal}%"></div>
           </div>
           <span class="an-lesson-pct">${pctVal}%</span>
         </div>
       </div>
     `;
   }).join('');
+}
+
+function lessonIcon(type) {
+  if (type === 'video') return 'V';
+  if (type === 'quiz') return 'Q';
+  return 'D';
 }
 
 function setText(id, val) {
@@ -167,7 +183,12 @@ function setText(id, val) {
 function escHtml(str) {
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function escAttr(str) {
+  return escHtml(str).replace(/`/g, '&#096;');
 }
 </script>
 {% endblock %}

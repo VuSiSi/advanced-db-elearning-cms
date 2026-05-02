@@ -683,7 +683,9 @@ function renderLessonPanel(meta, chapterId) {
         <input type="text" id="f-title" value="${esc(meta.title)}" />
       </div>
       <div class="form-group">
-        <label for="f-content">Content (Markdown supported) or Upload File (.pdf, .txt)</label>
+        <label for="f-content">Content (Markdown supported) or Upload PDF File
+          
+        </label>
         <textarea id="f-content" rows="14" style="font-family:var(--font-mono);font-size:13px;">${esc(meta.content||'')}</textarea>
         <input type="file" id="f-doc-upload" accept=".pdf,.txt,.doc,.docx,application/pdf,text/plain" style="margin-top: 10px; padding: 6px;" />
       </div>`;

@@ -51,18 +51,14 @@ function handleExpiredSession() {
   
   if (window.location.pathname === '/login') return;
 
-  // Nếu trang chưa tải xong (ví dụ user vừa F5 lại trang lúc token đã chết)
-  // -> Điều hướng thẳng về login cho mượt, tránh hiện modal trên trang trắng
   if (document.readyState === 'loading') {
     window.location.replace('/login');
   } else {
-    // Nếu user đang thao tác giữa chừng trên trang -> Hiện Modal
     showExpiredModal();
   }
 }
 
 function showExpiredModal() {
-  // Tránh hiện nhiều modal chồng chéo nhau
   if (document.getElementById('session-expired-modal')) return;
 
   const modalHtml = `
@@ -98,7 +94,13 @@ function authHeaders() {
 
 /*
     LAYER 1 — Global fetch interceptor
-      Catches any HTTP 401 returned by the backend (token expired or revoked server-side) and kicks the user to login.
+      Catches any HTTP 401 returned by the backend (token expired or revoked server-side)
+      and kicks the user to login.
+
+      FIX: Auth endpoints (/api/auth/*) return 401 for invalid credentials,
+      NOT for expired sessions. We must skip the interceptor for those routes
+      so that the login/register forms can display the correct error message
+      instead of being swallowed and replaced with "Session expired".
 */
 (function setupFetchInterceptor() {
   const _originalFetch = window.fetch;
@@ -107,14 +109,21 @@ function authHeaders() {
     const response = await _originalFetch.apply(this, args);
 
     if (response.status === 401) {
-      // Do not read the body here — callers may still need it.
-      // Redirect immediately; the in-flight page will be discarded.
-      handleExpiredSession();
-      
-      return Promise.reject(new Error('Session expired'));
+      // Determine the requested URL (args[0] can be a string, URL, or Request)
+      const requestUrl = (args[0] instanceof Request)
+        ? args[0].url
+        : String(args[0]);
+
+      // Skip session-expiry logic for auth endpoints:
+      // a 401 from /api/auth/login means wrong credentials, not an expired session.
+      const isAuthEndpoint = requestUrl.includes('/api/auth/');
+      if (!isAuthEndpoint) {
+        handleExpiredSession();
+        return Promise.reject(new Error('Session expired'));
+      }
     }
 
-    return response; // Always return so callers don't throw on undefined
+    return response;
   };
 })();
 

@@ -458,6 +458,7 @@ function attachTreeEvents() {
 //  DRAG & DROP (chapters and lessons)
 // ════════════════════════════════════════════
 function onDragStart(e) {
+  e.stopPropagation();
   dragEl   = this;
   dragType = this.dataset.dragType;
   e.dataTransfer.effectAllowed = 'move';
@@ -475,6 +476,7 @@ function onDragOver(e) {
   if (!dragEl || dragEl === this) return;
   if (this.dataset.dragType !== dragType) return; // same type only for element-on-element
   e.preventDefault();
+  e.stopPropagation();
   e.dataTransfer.dropEffect = 'move';
   document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
   this.classList.add('drag-over');
@@ -484,6 +486,7 @@ function onDragOver(e) {
 // Allow dropping a lesson into a lesson-container (another chapter's lesson list)
 function onContainerDragOver(e) {
   if (!dragEl || dragType !== 'lesson') return;
+  if (e.target.closest('[data-drag-type="lesson"]')) return;
   e.preventDefault();
   e.stopPropagation();
   e.dataTransfer.dropEffect = 'move';
@@ -496,14 +499,16 @@ function onDragLeave() { this.classList.remove('drag-over'); }
 
 async function onDrop(e) {
   e.preventDefault();
-  if (!dragEl || !dragOverEl || dragEl === dragOverEl) return;
+  e.stopPropagation();
+  const dropEl = this;
+  if (!dragEl || dragEl === dropEl) return;
 
   const chapters = courseData.chapters || [];
 
-  if (dragType === 'chapter' && dragOverEl.dataset.dragType === 'chapter') {
+  if (dragType === 'chapter' && dropEl.dataset.dragType === 'chapter') {
     // ── Reorder chapters ──
     const fromIdx = chapters.findIndex(c => c.chapter_id === dragEl.dataset.chapterId);
-    const toIdx   = chapters.findIndex(c => c.chapter_id === dragOverEl.dataset.chapterId);
+    const toIdx   = chapters.findIndex(c => c.chapter_id === dropEl.dataset.chapterId);
     if (fromIdx < 0 || toIdx < 0) return;
     const [moved] = chapters.splice(fromIdx, 1);
     chapters.splice(toIdx, 0, moved);
@@ -511,20 +516,24 @@ async function onDrop(e) {
     renderTree(document.getElementById('lesson-search').value);
     await saveReorder();
 
-  } else if (dragType === 'lesson' && dragOverEl.dataset.dragType === 'lesson') {
+  } else if (dragType === 'lesson' && dropEl.dataset.dragType === 'lesson') {
     // ── Reorder lessons (possibly across chapters) ──
     const srcChId  = dragEl.dataset.chapterId;
-    const dstChId  = dragOverEl.dataset.chapterId;
+    const dstChId  = dropEl.dataset.chapterId;
     const srcCh    = chapters.find(c => c.chapter_id === srcChId);
     const dstCh    = chapters.find(c => c.chapter_id === dstChId);
     if (!srcCh || !dstCh) return;
     const fromIdx = srcCh.lessons.findIndex(l => l.lesson_id === dragEl.dataset.lessonId);
-    const toIdx   = dstCh.lessons.findIndex(l => l.lesson_id === dragOverEl.dataset.lessonId);
-    if (fromIdx < 0 || toIdx < 0) return;
+    const beforeLessonId = dropEl.dataset.lessonId;
+    if (fromIdx < 0 || !beforeLessonId) return;
     const [moved] = srcCh.lessons.splice(fromIdx, 1);
-    dstCh.lessons.splice(toIdx, 0, moved);
+    const toIdx = dstCh.lessons.findIndex(l => l.lesson_id === beforeLessonId);
+    dstCh.lessons.splice(toIdx < 0 ? dstCh.lessons.length : toIdx, 0, moved);
     srcCh.lessons.forEach((l, i) => l.order = i);
-    if (srcChId !== dstChId) dstCh.lessons.forEach((l, i) => l.order = i);
+    dstCh.lessons.forEach((l, i) => l.order = i);
+    if (currentLesson && currentLesson.lessonId === moved.lesson_id) {
+      currentLesson.chapterId = dstChId;
+    }
     renderTree(document.getElementById('lesson-search').value);
     await saveReorder();
   }
@@ -538,7 +547,7 @@ async function onContainerDrop(e) {
 
   const srcChId = dragEl.dataset.chapterId;
   const dstChId = this.dataset.chapterId;
-  if (!srcChId || !dstChId || srcChId === dstChId) return;
+  if (!srcChId || !dstChId) return;
 
   const chapters = courseData.chapters || [];
   const srcCh = chapters.find(c => c.chapter_id === srcChId);
@@ -547,6 +556,7 @@ async function onContainerDrop(e) {
 
   const fromIdx = srcCh.lessons.findIndex(l => l.lesson_id === dragEl.dataset.lessonId);
   if (fromIdx < 0) return;
+  if (srcChId === dstChId && fromIdx === srcCh.lessons.length - 1) return;
 
   const [moved] = srcCh.lessons.splice(fromIdx, 1);
   dstCh.lessons.push(moved);  // append to end of target chapter
@@ -575,7 +585,10 @@ async function saveReorder() {
       headers: authHeaders(),
       body: JSON.stringify({ chapters, lessons }),
     });
-    if (!res.ok) throw new Error('Reorder failed');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Reorder failed');
+    }
     toast('success', 'Reordered', 'New order saved.', 1500);
   } catch (err) {
     toast('error', 'Reorder failed', err.message);
@@ -693,7 +706,7 @@ function renderLessonPanel(meta, chapterId) {
 
         <!-- Settings column -->
         <div class="quiz-settings-panel">
-          <div class="quiz-settings-title">⚙ Quiz Settings</div>
+          <div class="quiz-settings-title">Quiz Settings</div>
 
           <div class="quiz-setting-row">
             <div class="quiz-setting-info">
@@ -825,15 +838,15 @@ function renderQuestionEditor(q, qi) {
       </div>
 
       <div class="quiz-qtype-picker-wrapper">
-        <label class="quiz-label-sm">Question type:</label>
+        <label class="quiz-label-sm">Loại câu hỏi:</label>
         <div class="lesson-type-picker">
           <button type="button" class="type-btn qtype-btn ${qtype === 'single' ? 'active' : ''}"
             data-type="single" onclick="changeQuestionType(${qi}, 'single', this)">
-            Single answer (Radio)
+            Một đáp án (Radio button)
           </button>
           <button type="button" class="type-btn qtype-btn ${qtype === 'multiple' ? 'active' : ''}"
             data-type="multiple" onclick="changeQuestionType(${qi}, 'multiple', this)">
-            Multiple answers (Checkbox)
+            Nhiều đáp án (Checkbox)
           </button>
         </div>
       </div>

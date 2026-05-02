@@ -18,12 +18,12 @@ class SimpleRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host
         current_time = time.time()
-        
-        # CẤU HÌNH Ở ĐÂY: 100 request trong vòng 60 giây
+
         RATE_LIMIT = 100
         TIME_WINDOW = 60
 
         if client_ip in ip_request_counts:
+
             count, start_time = ip_request_counts[client_ip]
             
             # Đã qua 60 giây -> Xóa án tích, đếm lại từ đầu
@@ -60,9 +60,9 @@ async def lifespan(app: FastAPI):
         [("student_id", 1), ("course_id", 1)],
         name="progress_student_course_idx"
     )
-    print("✅ MongoDB indexes created successfully!")
+    print("MongoDB indexes created successfully!")
 
-    yield  # ← app runs here
+    yield  # app runs here
 
     # ── Shutdown ──
     await close_db()

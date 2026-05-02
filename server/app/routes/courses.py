@@ -338,15 +338,99 @@ async def reorder_course(
     chapters = doc.get("chapters", [])
 
     if "chapters" in body:
-        order_map = {c["chapter_id"]: c["order"] for c in body["chapters"]}
-        chapters.sort(key=lambda c: order_map.get(c["chapter_id"], c.get("order", 0)))
+        try:
+            order_map = {
+                c["chapter_id"]: int(c["order"])
+                for c in body["chapters"]
+            }
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid chapters reorder payload (400 Bad Request)")
+
+        for chapter in chapters:
+            chapter_id = chapter.get("chapter_id")
+            if chapter_id in order_map:
+                chapter["order"] = order_map[chapter_id]
+
+        chapters.sort(key=lambda c: (c.get("is_deleted", False), c.get("order", 0)))
 
     if "lessons" in body:
-        for ch in chapters:
-            ch_id = ch["chapter_id"]
-            if ch_id in body["lessons"]:
-                order_map = {l["lesson_id"]: l["order"] for l in body["lessons"][ch_id]}
-                ch["lessons"].sort(key=lambda l: order_map.get(l["lesson_id"], l.get("order", 0)))
+        lessons_payload = body["lessons"]
+        if not isinstance(lessons_payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid lessons reorder payload (400 Bad Request)")
+
+        active_chapter_ids = {
+            ch.get("chapter_id")
+            for ch in chapters
+            if not ch.get("is_deleted")
+        }
+        unknown_chapter_ids = set(lessons_payload) - active_chapter_ids
+        if unknown_chapter_ids:
+            raise HTTPException(status_code=400, detail="Lesson target chapter not found (400 Bad Request)")
+
+        lesson_by_id = {}
+        active_lesson_ids = set()
+        for chapter in chapters:
+            if chapter.get("is_deleted"):
+                continue
+            for lesson in chapter.get("lessons", []):
+                if lesson.get("is_deleted"):
+                    continue
+                lesson_id = lesson.get("lesson_id")
+                lesson_by_id[lesson_id] = lesson
+                active_lesson_ids.add(lesson_id)
+
+        requested_by_chapter = {}
+        requested_lesson_ids = []
+        for chapter_id, lesson_orders in lessons_payload.items():
+            if not isinstance(lesson_orders, list):
+                raise HTTPException(status_code=400, detail="Invalid lessons reorder payload (400 Bad Request)")
+            try:
+                ordered_entries = sorted(lesson_orders, key=lambda item: int(item["order"]))
+                lesson_ids = [item["lesson_id"] for item in ordered_entries]
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Invalid lessons reorder payload (400 Bad Request)")
+
+            requested_by_chapter[chapter_id] = lesson_ids
+            requested_lesson_ids.extend(lesson_ids)
+
+        if len(requested_lesson_ids) != len(set(requested_lesson_ids)):
+            raise HTTPException(status_code=400, detail="Duplicate lesson in reorder payload (400 Bad Request)")
+
+        requested_lesson_id_set = set(requested_lesson_ids)
+        unknown_lesson_ids = requested_lesson_id_set - active_lesson_ids
+        if unknown_lesson_ids:
+            raise HTTPException(status_code=400, detail="Lesson not found in this course (400 Bad Request)")
+
+        if requested_lesson_id_set == active_lesson_ids:
+            # Complete payload: rebuild active lessons in their target chapters, enabling cross-chapter moves.
+            for chapter in chapters:
+                if chapter.get("is_deleted"):
+                    continue
+                chapter_id = chapter.get("chapter_id")
+                deleted_lessons = [
+                    lesson for lesson in chapter.get("lessons", [])
+                    if lesson.get("is_deleted")
+                ]
+                active_lessons = []
+                for order, lesson_id in enumerate(requested_by_chapter.get(chapter_id, [])):
+                    lesson = lesson_by_id[lesson_id]
+                    lesson["order"] = order
+                    active_lessons.append(lesson)
+                chapter["lessons"] = active_lessons + deleted_lessons
+        else:
+            # Partial payload: keep legacy behavior and only reorder lessons inside their current chapters.
+            for chapter in chapters:
+                chapter_id = chapter.get("chapter_id")
+                if chapter_id in requested_by_chapter:
+                    order_map = {
+                        lesson_id: order
+                        for order, lesson_id in enumerate(requested_by_chapter[chapter_id])
+                    }
+                    for lesson in chapter.get("lessons", []):
+                        lesson_id = lesson.get("lesson_id")
+                        if lesson_id in order_map:
+                            lesson["order"] = order_map[lesson_id]
+                    chapter["lessons"].sort(key=lambda l: order_map.get(l.get("lesson_id"), l.get("order", 0)))
 
     await db.courses.update_one(
         {"_id": oid},

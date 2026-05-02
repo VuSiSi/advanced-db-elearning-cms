@@ -44,6 +44,9 @@
     </div>
   </aside>
 
+  <!-- ═══ RESIZE BAR ═══ -->
+  <div class="resizer" id="drag-me"></div>
+
   <!-- ═══ RIGHT: Content panel ═══ -->
   <section class="editor-content" id="editor-content">
     <div id="content-panel">
@@ -1486,6 +1489,47 @@ async function doCopyChapters() {
 }
 
 // ════════════════════════════════════════════
+//  RESIZER LOGIC (KÉO THẢ THAY ĐỔI KÍCH THƯỚC)
+// ════════════════════════════════════════════
+function initResizer() {
+  const resizer = document.getElementById('drag-me');
+  const sidebar = document.getElementById('editor-sidebar');
+  if (!resizer || !sidebar) return;
+
+  let isResizing = false;
+  let lastDownX = 0;
+
+  resizer.addEventListener('mousedown', function(e) {
+    isResizing = true;
+    lastDownX = e.clientX;
+    resizer.classList.add('is-resizing');
+    // Ngăn chặn bôi đen văn bản khi đang kéo
+    document.body.style.userSelect = 'none'; 
+  });
+
+  window.addEventListener('mousemove', function(e) {
+    if (!isResizing) return;
+
+    // Tính toán khoảng cách đã rê chuột
+    const offsetRight = e.clientX - lastDownX;
+    
+    // Cập nhật chiều rộng mới
+    const newWidth = sidebar.offsetWidth + offsetRight;
+    sidebar.style.width = `${newWidth}px`;
+    
+    lastDownX = e.clientX;
+  });
+
+  window.addEventListener('mouseup', function(e) {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('is-resizing');
+      document.body.style.userSelect = ''; // Khôi phục bôi đen văn bản
+    }
+  });
+}
+
+// ════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
@@ -1516,6 +1560,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lesson-search').addEventListener('input', e => renderTree(e.target.value));
 
   window.addEventListener('beforeunload', e => { if (isDirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  initResizer();
 
   loadCourse();
 });
@@ -1760,5 +1806,34 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 .copy-chapter-item:hover { border-color: var(--primary); background: var(--primary-light); }
 .copy-chapter-item input[type=checkbox] { margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; }
+
+/* --- Resizer CSS --- */
+.editor-layout {
+  display: flex;
+  flex-direction: row; /* Đảm bảo layout là hàng ngang */
+}
+
+.editor-sidebar {
+  width: 250px; /* Chiều rộng mặc định ban đầu */
+  min-width: 200px;
+  max-width: 20%; /* Không cho kéo quá nửa màn hình */
+}
+
+.resizer {
+  width: 5px;
+  background-color: var(--border);
+  cursor: col-resize; /* Đổi con trỏ chuột thành biểu tượng kéo ngang */
+  user-select: none;
+  transition: background-color 0.2s;
+  z-index: 101; /* Đảm bảo resizer nằm trên các thành phần khác */
+}
+
+.resizer:hover, .resizer.is-resizing {
+  background-color: var(--primary); /* Đổi màu khi hover hoặc đang kéo */
+}
+
+.editor-content {
+  flex: 1; /* Chiếm phần không gian còn lại */
+}
 </style>
 {% endblock %}

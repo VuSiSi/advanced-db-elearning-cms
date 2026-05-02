@@ -7,7 +7,7 @@
   <!-- ══════════════════════════════════════════════
        LEFT SIDEBAR — Course navigation + progress
   ══════════════════════════════════════════════ -->
-  <aside class="lv-sidebar">
+  <aside class="lv-sidebar" id="lv-sidebar">
 
     <!-- Course header -->
     <div class="lv-sidebar-header">
@@ -69,6 +69,9 @@
     </nav>
 
   </aside>
+
+  <!-- ═══ RESIZE BAR ═══ -->
+  <div class="resizer" id="drag-me"></div>
 
   <!-- ══════════════════════════════════════════════
        MAIN — Lesson content
@@ -245,9 +248,9 @@
     {% endif %}
 
   </main>
+
 </div>
 {% endblock %}
-
 
 {% block scripts %}
 <script>
@@ -265,6 +268,42 @@ let completedSet = new Set();
 let lessonOrder = [];
 
 // ═══════════════════════════════════════════
+//  RESIZER
+// ═══════════════════════════════════════════
+function initResizer() {
+  const resizer = document.getElementById('drag-me');
+  const sidebar = document.getElementById('lv-sidebar');
+  if (!resizer || !sidebar) return;
+
+  let isResizing = false;
+  let lastDownX = 0;
+
+  resizer.addEventListener('mousedown', function(e) {
+    isResizing = true;
+    lastDownX = e.clientX;
+    resizer.classList.add('is-resizing');
+    // Vô hiệu hóa bôi đen text khi kéo
+    document.body.style.userSelect = 'none'; 
+  });
+
+  window.addEventListener('mousemove', function(e) {
+    if (!isResizing) return;
+    const offsetRight = e.clientX - lastDownX;
+    const newWidth = sidebar.offsetWidth + offsetRight;
+    sidebar.style.width = `${newWidth}px`;
+    lastDownX = e.clientX;
+  });
+
+  window.addEventListener('mouseup', function(e) {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('is-resizing');
+      document.body.style.userSelect = '';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
@@ -275,6 +314,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupChapterToggles();
   setupVideoAutoProgress();
   await loadProgress();
+  initResizer();
 });
 
 // ─── Build flat lesson order from DOM ───
@@ -614,4 +654,45 @@ async function submitQuizScore(lessonId, courseId, score) {
   }
 }
 </script>
+
+<style>
+/* --- Resizer cho Lesson View --- */
+.lv-layout {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh; /* Đảm bảo layout chiếm toàn màn hình */
+}
+
+/* Ghi đè CSS cho Sidebar để nó có thể co giãn */
+.lv-sidebar {
+  width: 300px; /* Độ rộng mặc định */
+  min-width: 220px;
+  max-width: 20%; /* Tránh việc kéo sidebar quá nửa màn hình */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ghi đè CSS cho Content để chiếm phần không gian còn lại */
+.lv-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Định dạng thanh kéo */
+.resizer {
+  width: 5px;
+  background-color: var(--border); /* Sử dụng biến màu có sẵn của hệ thống */
+  cursor: col-resize;
+  user-select: none;
+  transition: background-color 0.2s;
+  z-index: 100;
+}
+
+.resizer:hover, .resizer.is-resizing {
+  background-color: var(--primary);
+}
+</style>
 {% endblock %}

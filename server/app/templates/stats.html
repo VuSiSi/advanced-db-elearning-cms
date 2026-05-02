@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Analytics — EduCMS{% endblock %}
+{% block title %}Analytics - EduCMS{% endblock %}
 
 {% block content %}
 <div class="page-wrapper">
@@ -15,7 +15,7 @@
 
   <div id="stats-content">
     <div class="empty-state-page">
-      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-icon">Stats</div>
       <h2 class="empty-state-title">Select a course</h2>
       <p class="empty-state-desc">Choose a course above to view its analytics and student performance data.</p>
     </div>
@@ -54,10 +54,6 @@ async function loadStats(courseId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed');
 
-    const completionRate = data.total_students > 0
-      ? Math.round((data.fully_completed_count / data.total_students) * 100)
-      : 0;
-
     content.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
@@ -72,11 +68,10 @@ async function loadStats(courseId) {
         <div class="stat-card">
           <div class="stat-label">Avg Quiz Score</div>
           <div class="stat-value">${data.avg_quiz_score !== null ? data.avg_quiz_score + '%' : 'N/A'}</div>
-          ${data.avg_quiz_score !== null ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Noise values (e.g. "V") auto-filtered</div>` : ''}
         </div>
       </div>
 
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:18px;">
         <div style="padding:16px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;">
           Per-Lesson Completion
         </div>
@@ -86,18 +81,27 @@ async function loadStats(courseId) {
               <th>Lesson</th>
               <th>Type</th>
               <th>Completions</th>
+              <th>Completed Students</th>
               <th>Rate</th>
             </tr>
           </thead>
           <tbody>
-            ${data.per_lesson_stats.map(ls => {
+            ${(data.per_lesson_stats || []).map(ls => {
               const rate = data.total_students > 0 ? Math.round((ls.completed_count / data.total_students) * 100) : 0;
               const badgeClass = ls.type === 'video' ? 'badge-video' : ls.type === 'quiz' ? 'badge-quiz' : 'badge-doc';
+              const students = (ls.completed_students || []).length
+                ? ls.completed_students.map(student => `
+                    <span title="${escAttr(student.email || '')}">
+                      ${escHtml(student.full_name || student.email || 'Unknown student')}
+                    </span>
+                  `).join('<br>')
+                : '<span style="color:var(--text-muted);">No students yet</span>';
               return `
                 <tr>
-                  <td>${ls.title}</td>
-                  <td><span class="badge ${badgeClass}">${ls.type}</span></td>
+                  <td>${escHtml(ls.title || 'Untitled lesson')}</td>
+                  <td><span class="badge ${badgeClass}">${escHtml(ls.type || 'lesson')}</span></td>
                   <td>${ls.completed_count}</td>
+                  <td>${students}</td>
                   <td>
                     <div style="display:flex;align-items:center;gap:8px;">
                       <div class="progress-bar" style="flex:1;max-width:120px;">
@@ -112,10 +116,47 @@ async function loadStats(courseId) {
           </tbody>
         </table>
       </div>
+
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        <div style="padding:16px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;">
+          Student Progress
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Email</th>
+              <th>Completed Lessons</th>
+              <th>Completion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(data.students || []).map(student => `
+              <tr>
+                <td>${escHtml(student.full_name || 'Unknown student')}</td>
+                <td>${escHtml(student.email || 'unknown')}</td>
+                <td>${student.completed}</td>
+                <td>${student.completion_pct}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
   } catch (err) {
-    content.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    content.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
   }
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function escAttr(str) {
+  return escHtml(str).replace(/`/g, '&#096;');
 }
 
 loadCourseList();

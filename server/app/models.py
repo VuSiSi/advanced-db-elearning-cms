@@ -79,6 +79,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    captcha_token: str
+    captcha_answer: str
 
 class UserInDB(UserBase):
     hashed_password: str
@@ -107,6 +109,8 @@ class Progress(ProgressCreate):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    captcha_token: str
+    captcha_answer: str
 
 class Token(BaseModel):
     access_token: str

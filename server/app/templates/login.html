@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Login — E-Learning CMS{% endblock %}
+{% block title %}Login - E-Learning CMS{% endblock %}
 
 {% block content %}
 <div class="auth-wrapper">
@@ -21,6 +21,11 @@
 
       <div class="form-group">
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+      </div>
+
+      <div class="form-group">
+        <label for="login-captcha-answer">Captcha: <span id="login-captcha-question">Loading...</span></label>
+        <input type="text" id="login-captcha-answer" placeholder="Enter captcha answer" autocomplete="off" required />
       </div>
 
       <button class="btn btn-primary btn-full" type="submit" id="btn-login">Sign in</button>
@@ -53,6 +58,11 @@
         </select>
       </div>
 
+      <div class="form-group">
+        <label for="register-captcha-answer">Captcha: <span id="register-captcha-question">Loading...</span></label>
+        <input type="text" id="register-captcha-answer" placeholder="Enter captcha answer" autocomplete="off" required />
+      </div>
+
       <button class="btn btn-primary btn-full" type="submit" id="btn-register">Create account</button>
     </form>
 
@@ -63,12 +73,17 @@
 {% block scripts %}
 <script>
 // ===== TAB SWITCH =====
-const tabLogin    = document.getElementById('tab-login');
+const tabLogin = document.getElementById('tab-login');
 const tabRegister = document.getElementById('tab-register');
-const formLogin   = document.getElementById('form-login');
+const formLogin = document.getElementById('form-login');
 const formRegister = document.getElementById('form-register');
 
-tabLogin.addEventListener('click',    () => switchTab('login'));
+const captchaState = {
+  login: { token: '', question: '' },
+  register: { token: '', question: '' },
+};
+
+tabLogin.addEventListener('click', () => switchTab('login'));
 tabRegister.addEventListener('click', () => switchTab('register'));
 
 function switchTab(tab) {
@@ -79,19 +94,13 @@ function switchTab(tab) {
   tabRegister.classList.toggle('active', !isLogin);
   tabLogin.setAttribute('aria-selected', String(isLogin));
   tabRegister.setAttribute('aria-selected', String(!isLogin));
+  loadCaptcha(tab);
 }
 
 // ===== HELPERS =====
-
-/**
- * Show an error message inside the given alert box.
- * Strips the ugly "(4xx Status Text)" suffix that the backend appends to detail strings,
- * e.g. "Incorrect email or password (401 Unauthorized)" → "Incorrect email or password"
- */
 function showError(boxId, rawMessage) {
   const box = document.getElementById(boxId);
   if (!box) return;
-  // Remove trailing "(NNN Reason Text)" appended by backend error strings
   const clean = rawMessage.replace(/\s*\(\d{3}[^)]*\)\s*$/, '').trim();
   box.textContent = clean || rawMessage;
   box.classList.remove('hidden');
@@ -102,17 +111,11 @@ function hideError(boxId) {
   if (box) box.classList.add('hidden');
 }
 
-/**
- * Extract a user-friendly message from a failed fetch response.
- * Handles JSON error bodies as well as network-level errors.
- */
 async function extractErrorMessage(res) {
-  // Map specific HTTP status codes to friendly messages
   if (res.status === 401) {
     return 'Incorrect email or password. Please try again.';
   }
   if (res.status === 400) {
-    // The backend may provide a more specific reason (e.g. "Email already registered")
     try {
       const data = await res.json();
       return data.detail || 'Invalid request. Please check your inputs.';
@@ -126,13 +129,44 @@ async function extractErrorMessage(res) {
   if (res.status >= 500) {
     return 'Server error. Please try again later.';
   }
-  // Fallback: try to read backend detail
   try {
     const data = await res.json();
     return data.detail || 'Something went wrong. Please try again.';
   } catch {
     return 'Something went wrong. Please try again.';
   }
+}
+
+async function loadCaptcha(formName) {
+  const questionEl = document.getElementById(`${formName}-captcha-question`);
+  const answerEl = document.getElementById(`${formName}-captcha-answer`);
+
+  if (questionEl) questionEl.textContent = 'Loading...';
+  if (answerEl) answerEl.value = '';
+
+  try {
+    const res = await fetch('/api/auth/captcha');
+    if (!res.ok) throw new Error('Captcha failed');
+
+    const data = await res.json();
+    captchaState[formName] = {
+      token: data.captcha_token,
+      question: data.question,
+    };
+
+    if (questionEl) questionEl.textContent = data.question;
+  } catch {
+    captchaState[formName] = { token: '', question: '' };
+    if (questionEl) questionEl.textContent = 'Cannot load captcha';
+  }
+}
+
+function getCaptchaPayload(formName) {
+  const answerEl = document.getElementById(`${formName}-captcha-answer`);
+  return {
+    captcha_token: captchaState[formName].token,
+    captcha_answer: answerEl ? answerEl.value.trim() : '',
+  };
 }
 
 // ===== LOGIN =====
@@ -142,13 +176,13 @@ formLogin.addEventListener('submit', async (e) => {
 });
 
 async function handleLogin() {
-  const email    = document.getElementById('login-email').value.trim();
+  const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
-  const btnEl    = document.getElementById('btn-login');
+  const captcha = getCaptchaPayload('login');
+  const btnEl = document.getElementById('btn-login');
 
   hideError('login-error');
 
-  // Client-side validation
   if (!email || !password) {
     showError('login-error', 'Please enter your email and password.');
     return;
@@ -157,50 +191,44 @@ async function handleLogin() {
     showError('login-error', 'Please enter a valid email address.');
     return;
   }
+  if (!captcha.captcha_answer) {
+    showError('login-error', 'Please enter the captcha answer.');
+    return;
+  }
 
-  btnEl.disabled    = true;
+  btnEl.disabled = true;
   btnEl.textContent = 'Signing in...';
 
   try {
-    // --- Inner try: isolate fetch() itself from response processing ---
-    // If the global fetch interceptor in app.js rejects the promise (old behaviour),
-    // we catch it HERE so we can show the correct credential error instead of
-    // the generic "Cannot connect" message that would come from the outer catch.
     let res;
     try {
       res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...captcha }),
       });
     } catch (fetchErr) {
-      // Two possible causes:
-      //  1. Old app.js interceptor rejected 401 as "Session expired"
-      //     → server DID respond, credentials were wrong
-      //  2. True network failure (TypeError: Failed to fetch)
-      //     → server was unreachable
       if (fetchErr instanceof TypeError) {
         showError('login-error', 'Cannot connect to the server. Please check your connection.');
       } else {
-        // Interceptor rejection or any other non-network error — treat as wrong credentials
         showError('login-error', 'Incorrect email or password. Please try again.');
       }
+      await loadCaptcha('login');
       return;
     }
 
-    // --- Response received: map status codes to friendly messages ---
     if (!res.ok) {
       const msg = await extractErrorMessage(res);
       showError('login-error', msg);
+      await loadCaptcha('login');
       return;
     }
 
     const data = await res.json();
     localStorage.setItem('token', data.access_token);
     window.location.href = '/courses';
-
   } finally {
-    btnEl.disabled    = false;
+    btnEl.disabled = false;
     btnEl.textContent = 'Sign in';
   }
 }
@@ -213,16 +241,16 @@ formRegister.addEventListener('submit', async (e) => {
 
 async function handleRegister() {
   const full_name = document.getElementById('reg-name').value.trim();
-  const email     = document.getElementById('reg-email').value.trim();
-  const password  = document.getElementById('reg-password').value;
-  const role      = document.getElementById('reg-role').value;
-  const btnEl     = document.getElementById('btn-register');
-  const okBox     = document.getElementById('register-success');
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const role = document.getElementById('reg-role').value;
+  const captcha = getCaptchaPayload('register');
+  const btnEl = document.getElementById('btn-register');
+  const okBox = document.getElementById('register-success');
 
   hideError('register-error');
   okBox.classList.add('hidden');
 
-  // Client-side validation
   if (!full_name) {
     showError('register-error', 'Please enter your full name.');
     return;
@@ -239,50 +267,55 @@ async function handleRegister() {
     showError('register-error', 'Password must be at least 6 characters long.');
     return;
   }
+  if (!captcha.captcha_answer) {
+    showError('register-error', 'Please enter the captcha answer.');
+    return;
+  }
 
-  btnEl.disabled    = true;
+  btnEl.disabled = true;
   btnEl.textContent = 'Creating account...';
 
   try {
-    // Inner try: isolate fetch() so a rejected promise (interceptor or network)
-    // is handled separately from response-processing errors.
     let res;
     try {
       res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name, role }),
+        body: JSON.stringify({ email, password, full_name, role, ...captcha }),
       });
     } catch (fetchErr) {
       if (fetchErr instanceof TypeError) {
         showError('register-error', 'Cannot connect to the server. Please check your connection.');
       } else {
-        // Interceptor rejection — register endpoint should not return 401,
-        // but handle gracefully just in case.
         showError('register-error', 'Something went wrong. Please try again.');
       }
+      await loadCaptcha('register');
       return;
     }
 
     if (!res.ok) {
       const msg = await extractErrorMessage(res);
-      // Special-case the duplicate email message from backend
       if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already')) {
         showError('register-error', 'This email is already registered. Please log in instead.');
       } else {
         showError('register-error', msg);
       }
+      await loadCaptcha('register');
       return;
     }
 
     okBox.textContent = 'Account created successfully! Redirecting to login...';
     okBox.classList.remove('hidden');
+    await loadCaptcha('register');
+    await loadCaptcha('login');
     setTimeout(() => switchTab('login'), 1500);
-
   } finally {
-    btnEl.disabled    = false;
+    btnEl.disabled = false;
     btnEl.textContent = 'Create account';
   }
 }
+
+loadCaptcha('login');
+loadCaptcha('register');
 </script>
 {% endblock %}

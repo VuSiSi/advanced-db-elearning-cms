@@ -135,7 +135,7 @@
 
         <article class="lv-doc-content" id="lv-doc-content">
           {% if lesson.content %}
-            {{ lesson.content }}
+            {{ lesson.content | safe }}
           {% else %}
             <p class="lv-empty-content">No content available yet.</p>
           {% endif %}

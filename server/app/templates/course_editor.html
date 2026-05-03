@@ -1278,7 +1278,7 @@ function confirmDeleteChapter(chapterId, title) {
 }
 
 function confirmDeleteLesson(chapterId, lessonId, title) {
-  document.getElementById('delete-confirm-msg').innerHTML = `Delete lesson <b>"${title}"</b>? This cannot be undone.`;
+  document.getElementById('delete-confirm-msg').innerHTML = `Delete lesson <b>"${title}"</b> and its content? This cannot be undone.`;
   pendingDeleteFn = () => deleteLesson(chapterId, lessonId);
   openModal('modal-confirm-delete');
 }

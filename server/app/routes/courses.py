@@ -5,8 +5,15 @@ from app.database import get_db
 from bson import ObjectId
 from datetime import datetime, timezone
 import uuid
+from pathlib import Path
+import re
+from urllib.parse import unquote
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+UPLOAD_URL_PREFIX = "/static/uploads/"
+UPLOAD_DIR = (Path(__file__).resolve().parents[1] / "static" / "uploads").resolve()
+UPLOAD_URL_RE = re.compile(r"/static/uploads/[^\s\"'<>)]*")
 
 
 def utc_now() -> datetime:
@@ -50,6 +57,84 @@ async def _attach_instructor_names(db, courses: list[dict]) -> list[dict]:
         course["instructor_name"] = name_by_id.get(course.get("instructor_id"))
 
     return courses
+
+
+def _document_upload_urls(lesson: dict) -> set[str]:
+    if lesson.get("type") != "document":
+        return set()
+
+    content = lesson.get("content") or ""
+    return {
+        unquote(match.group(0))
+        for match in UPLOAD_URL_RE.finditer(content)
+    }
+
+
+def _upload_path_from_url(url: str) -> Path | None:
+    if not url.startswith(UPLOAD_URL_PREFIX):
+        return None
+
+    relative_path = unquote(url[len(UPLOAD_URL_PREFIX):]).lstrip("/\\")
+    file_path = (UPLOAD_DIR / relative_path).resolve()
+
+    try:
+        file_path.relative_to(UPLOAD_DIR)
+    except ValueError:
+        return None
+
+    return file_path
+
+
+def _find_lesson(doc: dict, chapter_id: str, lesson_id: str) -> dict | None:
+    for chapter in doc.get("chapters", []):
+        if chapter.get("chapter_id") != chapter_id:
+            continue
+        for lesson in chapter.get("lessons", []):
+            if lesson.get("lesson_id") == lesson_id:
+                return lesson
+    return None
+
+
+async def _upload_url_used_by_active_lesson(db, url: str, skip_lesson_id: str) -> bool:
+    docs = await db.courses.find(
+        {"chapters.lessons.content": {"$regex": re.escape(url)}},
+        {"chapters": 1},
+    ).to_list(None)
+
+    for doc in docs:
+        for chapter in doc.get("chapters", []):
+            if chapter.get("is_deleted"):
+                continue
+            for lesson in chapter.get("lessons", []):
+                if lesson.get("is_deleted") or lesson.get("lesson_id") == skip_lesson_id:
+                    continue
+                if url in _document_upload_urls(lesson):
+                    return True
+    return False
+
+
+async def _delete_unreferenced_document_files(db, lesson: dict, lesson_id: str) -> dict:
+    deleted_files = []
+    failed_files = []
+
+    for url in _document_upload_urls(lesson):
+        if await _upload_url_used_by_active_lesson(db, url, lesson_id):
+            continue
+
+        file_path = _upload_path_from_url(url)
+        if not file_path or not file_path.is_file():
+            continue
+
+        try:
+            file_path.unlink()
+            deleted_files.append(url)
+        except OSError:
+            failed_files.append(url)
+
+    return {
+        "deleted_files": deleted_files,
+        "failed_files": failed_files,
+    }
 
 # ─── LIST ALL COURSES (for students & catalog) ─────────────
 @router.get("/")
@@ -316,6 +401,12 @@ async def delete_lesson(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
+    doc = await db.courses.find_one(
+        {"_id": oid, "instructor_id": token_data.user_id},
+        {"chapters": 1},
+    )
+    lesson_to_delete = _find_lesson(doc or {}, chapter_id, lesson_id)
+
     result = await db.courses.update_one(
         {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
         {
@@ -333,7 +424,13 @@ async def delete_lesson(
         raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Lesson not found (404 Not Found)")
-    return {"message": "Lesson deleted"}
+
+    file_cleanup = (
+        await _delete_unreferenced_document_files(db, lesson_to_delete, lesson_id)
+        if lesson_to_delete
+        else {"deleted_files": [], "failed_files": []}
+    )
+    return {"message": "Lesson deleted", **file_cleanup}
 
 
 # ─── REORDER ───────────────────────────────────────────────

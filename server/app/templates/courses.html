@@ -16,10 +16,50 @@
   </div>
 
   <!-- Course list header -->
-  <div class="courses-header-bar">
-    <div>
-      <h2 class="courses-section-title">Tất cả khóa học</h2>
-      <p id="course-count" class="courses-count-label"></p>
+
+  <div class="co-filters">
+    <div class="co-filter-group" id="filter-type-group" style="display:none;">
+      <select class="co-select" id="filter-type" onchange="applyFilters()">
+        <option value="all">All</option>
+        <option value="mine">My Courses</option>
+      </select>
+    </div>
+
+    <div class="co-search-wrap">
+      <svg class="co-search-icon" viewBox="0 0 20 20" fill="none">
+        <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15 15l-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input class="co-search" id="search-input" type="text"
+            placeholder="Tìm kiếm khóa học..." oninput="applyFilters()" />
+    </div>
+
+    <div class="co-filter-group">
+      <select class="co-select" id="sort-by" onchange="applyFilters()">
+        <option value="default">Mặc định</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+      </select>
+    </div>
+
+    <div class="co-view-toggle">
+      <button class="co-view-btn active" id="btn-grid" title="Grid view"
+              onclick="setView('grid')">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <rect x="1" y="1" width="6" height="6" rx="1"/>
+          <rect x="9" y="1" width="6" height="6" rx="1"/>
+          <rect x="1" y="9" width="6" height="6" rx="1"/>
+          <rect x="9" y="9" width="6" height="6" rx="1"/>
+        </svg>
+      </button>
+      <button class="co-view-btn" id="btn-list" title="List view"
+              onclick="setView('list')">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <rect x="1" y="2" width="14" height="2" rx="1"/>
+          <rect x="1" y="7" width="14" height="2" rx="1"/>
+          <rect x="1" y="12" width="14" height="2" rx="1"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -127,6 +167,10 @@
 <script>
 const CARD_COLORS = ['blue', 'purple', 'cyan', 'warm', 'green', 'indigo'];
 
+let allCourses = [];
+let currentView = 'grid';
+let userRole = null;
+
 // ──── MODAL FUNCTIONS ────────────────────────────
 function openCreateCourseModal() {
   document.getElementById('modal-create-course').style.display = 'flex';
@@ -232,24 +276,8 @@ async function loadCourses() {
       return;
     }
 
-    grid.innerHTML = courses.map((c, i) => {
-      const chapterCount = (c.chapters || []).length;
-      const lessonCount = (c.chapters || []).reduce((sum, ch) => sum + (ch.lessons || []).length, 0);
-      const colorClass = CARD_COLORS[i % CARD_COLORS.length];
-      return `
-        <div class="course-card-new" onclick="window.location.href='/courses/${c.id}'" style="--card-color: ${i % 6}">
-          <div class="course-card-accent ${colorClass}"></div>
-          <div class="course-card-body-new">
-            <h3 class="course-card-title-new">${escHtml(c.title)}</h3>
-            <p class="course-card-desc-new">${escHtml(c.description || 'Bộ nội dung học tập toàn diện')}</p>
-            <div class="course-card-stats">
-              <span class="stat">📖 ${chapterCount}</span>
-              <span class="stat">🎯 ${lessonCount}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
+    allCourses = courses;
+    applyFilters();
 
     if (typeof toast === 'function') {
       toast('success', 'Tải xong!', `Có ${courses.length} khóa học sẵn sàng.`, 2000);
@@ -403,6 +431,82 @@ async function cleanupStressData() {
   } finally {
     btn.textContent = '🧹 Dọn dẹp Data Test';
   }
+}
+
+function applyFilters() {
+  const q        = document.getElementById('search-input')?.value.toLowerCase() || '';
+  const filterBy = document.getElementById('filter-type')?.value || 'all';
+  const sortBy   = document.getElementById('sort-by')?.value || 'default';
+
+  let list = [...allCourses];
+
+  // Filter: My Courses (instructor only)
+  if (filterBy === 'mine' && userRole === 'instructor') {
+    const token   = localStorage.getItem('token');
+    const payload = token ? JSON.parse(atob(token.split('.')[1])) : {};
+    list = list.filter(c => c.instructor_id === payload.sub);
+  }
+
+  // Search
+  if (q) {
+    list = list.filter(c =>
+      c.title.toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q)
+    );
+  }
+
+  // Sort
+  if (sortBy === 'az') list.sort((a, b) => a.title.localeCompare(b.title));
+  if (sortBy === 'za') list.sort((a, b) => b.title.localeCompare(a.title));
+
+  renderCourses(list);
+}
+
+function renderCourses(courses) {
+  const grid    = document.getElementById('course-grid');
+  const countEl = document.getElementById('course-count');
+
+  if (countEl) {
+    countEl.textContent = courses.length === 0
+      ? 'Không tìm thấy khóa học'
+      : `${courses.length} khóa học`;
+  }
+
+  if (courses.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state-block">
+        <div class="empty-state-icon">🔍</div>
+        <h3>Không có kết quả</h3>
+        <p>Thử thay đổi từ khóa hoặc bộ lọc.</p>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = courses.map((c, i) => {
+    const chapterCount = (c.chapters || []).length;
+    const lessonCount  = (c.chapters || []).reduce((s, ch) => s + (ch.lessons || []).length, 0);
+    const colorClass   = CARD_COLORS[i % CARD_COLORS.length];
+    return `
+      <div class="course-card-new" onclick="window.location.href='/courses/${c.id}'">
+        <div class="course-card-accent ${colorClass}"></div>
+        <div class="course-card-body-new">
+          <h3 class="course-card-title-new">${escHtml(c.title)}</h3>
+          <p class="course-card-desc-new">${escHtml(c.description || 'Bộ nội dung học tập toàn diện')}</p>
+          <div class="course-card-stats">
+            <span class="stat">📖 ${chapterCount}</span>
+            <span class="stat">🎯 ${lessonCount}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function setView(mode) {
+  currentView = mode;
+  const grid = document.getElementById('course-grid');
+  grid.classList.toggle('list-view', mode === 'list');
+  document.getElementById('btn-grid').classList.toggle('active', mode === 'grid');
+  document.getElementById('btn-list').classList.toggle('active', mode === 'list');
 }
 </script>
 {% endblock %}

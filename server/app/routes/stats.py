@@ -75,7 +75,7 @@ async def get_course_stats(
         except Exception:
             continue
 
-    users_cursor = db.users.find({"_id": {"$in": object_ids}})
+    users_cursor = db.users.find({"_id": {"$in": object_ids}, "role": "student"})
     users_list = await users_cursor.to_list(length=None)
     id_to_user = {
         str(user["_id"]): {
@@ -84,6 +84,11 @@ async def get_course_stats(
         }
         for user in users_list
     }
+    student_results = [
+        result
+        for result in student_results
+        if result["_id"] in id_to_user
+    ]
 
     lesson_completion_map = {
         lesson["lesson_id"]: 0
@@ -105,11 +110,15 @@ async def get_course_stats(
             {"full_name": "Unknown student", "email": "unknown"},
         )
 
+        completed_lesson_ids_for_student = set()
         for completion in result.get("lesson_completions", []):
             lesson_id = completion.get("lesson_id")
             if lesson_id not in lesson_completion_map:
                 continue
+            if lesson_id in completed_lesson_ids_for_student:
+                continue
 
+            completed_lesson_ids_for_student.add(lesson_id)
             lesson_completion_map[lesson_id] += 1
             lesson_students_map[lesson_id].append(
                 {
@@ -127,7 +136,7 @@ async def get_course_stats(
         ]
         all_quiz_scores.extend(scores)
 
-        completed_count = result["completed_count"]
+        completed_count = len(completed_lesson_ids_for_student)
         students_summary.append(
             {
                 "student_id": student_id,

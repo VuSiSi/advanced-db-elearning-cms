@@ -80,6 +80,7 @@
 {% block scripts %}
 <script>
 const COURSE_ID = "{{ course.id if course else '' }}";
+let analyticsData = null;
 
 document.addEventListener('DOMContentLoaded', loadAnalytics);
 
@@ -101,6 +102,7 @@ async function loadAnalytics() {
       throw new Error(err.detail || 'Failed to load analytics');
     }
     const data = await res.json();
+    analyticsData = data;
     renderAnalytics(data);
   } catch (err) {
     document.getElementById('an-lesson-list').innerHTML =
@@ -126,11 +128,42 @@ function renderAnalytics(data) {
   }
   setText('an-donut-label', `${Math.round(pct)}%`);
 
+  renderLessonStats(data, getLessonSearchQuery());
+}
+
+function applyLessonSearch() {
+  if (!analyticsData) return;
+  renderLessonStats(analyticsData, getLessonSearchQuery());
+}
+
+function getLessonSearchQuery() {
+  return document.getElementById('analytics-search')?.value.trim().toLowerCase() || '';
+}
+
+function renderLessonStats(data, query = '') {
   const container = document.getElementById('an-lesson-list');
-  const lessonStats = data.per_lesson_stats || [];
+  let lessonStats = data.per_lesson_stats || [];
 
   if (!lessonStats.length) {
     container.innerHTML = '<p class="an-empty">No lesson data available.</p>';
+    return;
+  }
+
+  if (query) {
+    lessonStats = lessonStats.filter((lesson) => {
+      const completedStudents = lesson.completed_students || [];
+      const haystack = [
+        lesson.title || '',
+        lesson.type || '',
+        ...completedStudents.map((student) => student.full_name || ''),
+        ...completedStudents.map((student) => student.email || ''),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }
+
+  if (!lessonStats.length) {
+    container.innerHTML = '<p class="an-empty">No matching lessons or students found.</p>';
     return;
   }
 

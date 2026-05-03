@@ -26,6 +26,30 @@ def _course_from_doc(doc: dict) -> dict:
 
     return doc
 
+async def _attach_instructor_names(db, courses: list[dict]) -> list[dict]:
+    instructor_object_ids = []
+    for course in courses:
+        instructor_id = course.get("instructor_id")
+        if ObjectId.is_valid(instructor_id):
+            instructor_object_ids.append(ObjectId(instructor_id))
+
+    if not instructor_object_ids:
+        return courses
+
+    users = await db.users.find(
+        {"_id": {"$in": instructor_object_ids}},
+        {"full_name": 1},
+    ).to_list(None)
+    name_by_id = {
+        str(user["_id"]): user.get("full_name")
+        for user in users
+        if user.get("full_name")
+    }
+
+    for course in courses:
+        course["instructor_name"] = name_by_id.get(course.get("instructor_id"))
+
+    return courses
 
 # ─── LIST ALL COURSES (for students & catalog) ─────────────
 @router.get("/")
@@ -33,6 +57,7 @@ async def list_courses():
     """List all courses (no chapters) — everyone can see."""
     db = get_db()
     courses = await db.courses.find({}, {"chapters": 0}).to_list(100)
+    courses = await _attach_instructor_names(db, courses)
     return [_course_from_doc(c) for c in courses]
 
 
@@ -45,6 +70,7 @@ async def my_courses(token_data: TokenData = Depends(require_instructor)):
         {"instructor_id": token_data.user_id},
         {"chapters": 0}
     ).to_list(100)
+    courses = await _attach_instructor_names(db, courses)
     return [_course_from_doc(c) for c in courses]
 
 
@@ -65,6 +91,7 @@ async def get_course(course_id: str, token_data: TokenData = Depends(get_current
     if not doc:
         raise HTTPException(status_code=404, detail="Course not found (404 Not Found)")
 
+    await _attach_instructor_names(db, [doc])
     return _course_from_doc(doc)
 
 

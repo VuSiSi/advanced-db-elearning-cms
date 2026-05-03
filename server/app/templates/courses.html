@@ -466,6 +466,18 @@ function renderCourses(courses) {
   const grid    = document.getElementById('course-grid');
   const countEl = document.getElementById('course-count');
 
+  // Giải mã token để lấy user_id của người đang đăng nhập
+  let currentUserId = null;
+  try {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      currentUserId = payload.sub;
+    }
+  } catch (e) {
+    console.warn("Could not decode token for user ID");
+  }
+
   if (countEl) {
     countEl.textContent = courses.length === 0
       ? 'Không tìm thấy khóa học'
@@ -483,19 +495,21 @@ function renderCourses(courses) {
   }
 
   grid.innerHTML = courses.map((c, i) => {
-    const chapterCount = (c.chapters || []).length;
-    const lessonCount  = (c.chapters || []).reduce((s, ch) => s + (ch.lessons || []).length, 0);
-    const colorClass   = CARD_COLORS[i % CARD_COLORS.length];
+    const colorClass = CARD_COLORS[i % CARD_COLORS.length];
+    
+    const isOwnCourse = currentUserId && c.instructor_id === currentUserId;
+    const ownerName = c.instructor_name || 'Unknown User';
+    const ownerHtml = !isOwnCourse
+      ? `<div class="course-card-stats"><span class="stat">👤 Owned by ${escHtml(ownerName)}</span></div>`
+      : `<div class="course-card-stats"><span class="stat">👤 Owned by you</span></div>`;
+
     return `
       <div class="course-card-new" onclick="window.location.href='/courses/${c.id}'">
         <div class="course-card-accent ${colorClass}"></div>
         <div class="course-card-body-new">
           <h3 class="course-card-title-new">${escHtml(c.title)}</h3>
           <p class="course-card-desc-new">${escHtml(c.description || 'Bộ nội dung học tập toàn diện')}</p>
-          <div class="course-card-stats">
-            <span class="stat">📖 ${chapterCount}</span>
-            <span class="stat">🎯 ${lessonCount}</span>
-          </div>
+          ${ownerHtml}
         </div>
       </div>`;
   }).join('');

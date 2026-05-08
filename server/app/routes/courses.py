@@ -44,7 +44,7 @@ async def _attach_instructor_names(db, courses: list[dict]) -> list[dict]:
         return courses
 
     users = await db.users.find(
-        {"_id": {"$in": instructor_object_ids}},
+        {"_id": {"$in": instructor_object_ids}, "is_deleted": {"$ne": True}},
         {"full_name": 1},
     ).to_list(None)
     name_by_id = {
@@ -97,7 +97,7 @@ def _find_lesson(doc: dict, chapter_id: str, lesson_id: str) -> dict | None:
 
 async def _upload_url_used_by_active_lesson(db, url: str, skip_lesson_id: str) -> bool:
     docs = await db.courses.find(
-        {"chapters.lessons.content": {"$regex": re.escape(url)}},
+        {"chapters.lessons.content": {"$regex": re.escape(url)}, "is_deleted": {"$ne": True}},
         {"chapters": 1},
     ).to_list(None)
 
@@ -141,7 +141,7 @@ async def _delete_unreferenced_document_files(db, lesson: dict, lesson_id: str) 
 async def list_courses():
     """List all courses (no chapters) — everyone can see."""
     db = get_db()
-    courses = await db.courses.find({}, {"chapters": 0}).to_list(100)
+    courses = await db.courses.find({"is_deleted": {"$ne": True}}, {"chapters": 0}).to_list(100)
     courses = await _attach_instructor_names(db, courses)
     return [_course_from_doc(c) for c in courses]
 
@@ -152,7 +152,7 @@ async def my_courses(token_data: TokenData = Depends(require_instructor)):
     """List only the instructor's own courses."""
     db = get_db()
     courses = await db.courses.find(
-        {"instructor_id": token_data.user_id},
+        {"instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {"chapters": 0}
     ).to_list(100)
     courses = await _attach_instructor_names(db, courses)
@@ -169,7 +169,7 @@ async def get_course(course_id: str, token_data: TokenData = Depends(get_current
     """
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
@@ -186,7 +186,7 @@ async def get_lesson(course_id: str, lesson_id: str, token_data: TokenData = Dep
     """Get one lesson by ID (for editor panel or viewing)."""
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
@@ -235,7 +235,7 @@ async def update_course(
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     result = await db.courses.update_one(
-        {"_id": oid, "instructor_id": token_data.user_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {"$set": {**course_in.model_dump(), "updated_at": utc_now()}},
     )
     if result.matched_count == 0:
@@ -258,7 +258,7 @@ async def add_chapter(
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     doc = await db.courses.find_one(
-        {"_id": oid, "instructor_id": token_data.user_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {"chapters": 1}
     )
     if not doc:
@@ -299,7 +299,7 @@ async def delete_chapter(
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     result = await db.courses.update_one(
-        {"_id": oid, "instructor_id": token_data.user_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {
             "$set": {
                 "chapters.$[chap].is_deleted": True,
@@ -336,7 +336,7 @@ async def add_lesson(
     }
 
     result = await db.courses.update_one(
-        {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id, "is_deleted": {"$ne": True}},
         {
             "$push": {"chapters.$.lessons": lesson},
             "$set": {"updated_at": utc_now()},
@@ -372,7 +372,7 @@ async def update_lesson(
     update_fields["updated_at"] = utc_now()
 
     result = await db.courses.update_one(
-        {"_id": oid, "instructor_id": token_data.user_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {"$set": update_fields},
         array_filters=[
             {"chap.chapter_id": chapter_id},
@@ -402,13 +402,13 @@ async def delete_lesson(
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     doc = await db.courses.find_one(
-        {"_id": oid, "instructor_id": token_data.user_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}},
         {"chapters": 1},
     )
     lesson_to_delete = _find_lesson(doc or {}, chapter_id, lesson_id)
 
     result = await db.courses.update_one(
-        {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id},
+        {"_id": oid, "instructor_id": token_data.user_id, "chapters.chapter_id": chapter_id, "is_deleted": {"$ne": True}},
         {
             "$set": {
                 "chapters.$[chap].lessons.$[les].is_deleted": True,
@@ -454,7 +454,7 @@ async def reorder_course(
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
 
     doc = await db.courses.find_one(
-        {"_id": oid, "instructor_id": token_data.user_id}
+        {"_id": oid, "instructor_id": token_data.user_id, "is_deleted": {"$ne": True}}
     )
     if not doc:
         raise HTTPException(status_code=403, detail="Course not found or you don't have permission (403 Forbidden)")

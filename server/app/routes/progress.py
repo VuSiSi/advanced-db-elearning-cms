@@ -44,7 +44,7 @@ async def mark_lesson_complete(
 
     # Guard: validate course exists
     try:
-        course = await db.courses.find_one({"_id": ObjectId(body.course_id)})
+        course = await db.courses.find_one({"_id": ObjectId(body.course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
@@ -66,6 +66,7 @@ async def mark_lesson_complete(
     progress_doc = await db.student_progress.find_one({
         "student_id": student_id,
         "course_id": body.course_id,
+        "is_deleted": {"$ne": True},
     })
 
     if progress_doc:
@@ -185,7 +186,7 @@ async def get_student_progress_by_id(
 async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
     # Count total lessons
     try:
-        course = await db.courses.find_one({"_id": ObjectId(course_id)})
+        course = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
@@ -198,7 +199,7 @@ async def _build_progress_response(db, student_id: str, course_id: str) -> dict:
 
     # Aggregation pipeline — filter out noise values like "V", "", None
     pipeline = [
-        {"$match": {"student_id": student_id, "course_id": course_id}},
+        {"$match": {"student_id": student_id, "course_id": course_id, "is_deleted": {"$ne": True}}},
         {"$unwind": "$lesson_completions"},
         {
             "$match": {
@@ -263,7 +264,7 @@ async def _recalculate_progress(db, student_id: str, course_id: str, course: dic
         if not ch.get("is_deleted"):
             total += len([ls for ls in ch.get("lessons", []) if not ls.get("is_deleted")])
     progress_doc = await db.student_progress.find_one({
-        "student_id": student_id, "course_id": course_id
+        "student_id": student_id, "course_id": course_id, "is_deleted": {"$ne": True}
     })
     if not progress_doc or total == 0:
         return

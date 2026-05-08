@@ -134,7 +134,7 @@
 
         <div class="form-group">
           <label>Số Loop (N)</label>
-          <input type="number" id="stress-loop" min="10" value="50" required />
+          <input type="number" id="stress-loop" min="50" value="50" required />
           <small style="color: var(--text-3); font-size: 12px; display: block; margin-top: 4px;">
             Min: 50. Số loop càng cao, hệ thống càng chịu tải nặng. Vui lòng bắt đầu với giá trị nhỏ để quan sát hiệu suất và tránh quá tải.
           </small>
@@ -143,8 +143,8 @@
         <div class="form-group">
           <label>Database Engine</label>
           <select id="stress-db">
-            <option value="mongo">MongoDB (Current)</option>
-            <option value="sql" disabled>PostgreSQL (Coming soon)</option>
+            <option value="mongo">MongoDB</option>
+            <option value="postgres">PostgreSQL</option>
           </select>
         </div>
 
@@ -340,6 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let currentBatchId = null;
+let currentBatchDbType = null;
 
 function openStressModal() {
   document.getElementById('modal-stress-test').style.display = 'flex';
@@ -374,8 +375,8 @@ document.getElementById('form-stress-test').addEventListener('submit', async (e)
   const errBox = document.getElementById('stress-error');
   const okBox = document.getElementById('stress-success');
   
-  if (loop < 10) {
-    errBox.textContent = 'Số loop tối thiểu là 10';
+  if (loop < 50) {
+    errBox.textContent = 'Số loop tối thiểu là 50';
     errBox.classList.remove('hidden');
     return;
   }
@@ -396,7 +397,8 @@ document.getElementById('form-stress-test').addEventListener('submit', async (e)
     if (!res.ok) throw new Error(data.detail);
     
     currentBatchId = data.batch_id;
-    okBox.innerHTML = `Hoàn tất! Thời gian: <b>${data.time_taken}s</b>. Đã sinh ra batch: <code>${currentBatchId}</code>`;
+    currentBatchDbType = data.db_type || dbType;
+    okBox.innerHTML = `Hoàn tất! Thời gian: <b>${data.time_taken}s</b>. Đã sinh ra batch: <code>${currentBatchId}</code>. Đóng modal để giữ data, hoặc bấm dọn dẹp để soft delete batch này.`;
     okBox.classList.remove('hidden');
     document.getElementById('btn-cleanup').classList.remove('hidden'); // Hiện nút dọn dẹp
     loadCourses(); // Render lại UI để thấy data rác (nếu muốn)
@@ -418,13 +420,14 @@ async function cleanupStressData() {
     const res = await fetch('/api/stress-test/cleanup', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ batch_id: currentBatchId })
+      body: JSON.stringify({ batch_id: currentBatchId, db_type: currentBatchDbType })
     });
     if (!res.ok) throw new Error("Dọn dẹp thất bại");
     
     document.getElementById('stress-success').textContent = 'Đã Soft Delete toàn bộ dữ liệu test an toàn!';
     btn.classList.add('hidden');
     currentBatchId = null;
+    currentBatchDbType = null;
     loadCourses(); // Render lại UI
   } catch (err) {
     alert(err.message);

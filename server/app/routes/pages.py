@@ -53,7 +53,7 @@ async def course_page(request: Request, course_id: str):
     """
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
@@ -73,7 +73,7 @@ async def course_editor_page(request: Request, course_id: str):
     """Instructor-only course editor."""
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
@@ -91,7 +91,7 @@ async def lesson_view_page(request: Request, course_id: str, lesson_id: str):
     """Student lesson viewer."""
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:
@@ -123,7 +123,7 @@ async def analytics_page(request: Request, course_id: str):
     """Instructor analytics dashboard."""
     db = get_db()
     try:
-        doc = await db.courses.find_one({"_id": ObjectId(course_id)})
+        doc = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not doc:

@@ -65,7 +65,7 @@ async def register(user_in: UserCreate):
 
     db = get_db()
 
-    existing = await db.users.find_one({"email": user_in.email})
+    existing = await db.users.find_one({"email": user_in.email, "is_deleted": {"$ne": True}})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered (400 Bad Request)")
 
@@ -90,7 +90,7 @@ async def login(user_in: LoginRequest):
 
     db = get_db()
 
-    user = await db.users.find_one({"email": user_in.email})
+    user = await db.users.find_one({"email": user_in.email, "is_deleted": {"$ne": True}})
     if not user or not verify_password(user_in.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -16,7 +16,7 @@ async def get_course_stats(
     db = get_db()
 
     try:
-        course = await db.courses.find_one({"_id": ObjectId(course_id)})
+        course = await db.courses.find_one({"_id": ObjectId(course_id), "is_deleted": {"$ne": True}})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid course ID (400 Bad Request)")
     if not course:
@@ -33,7 +33,7 @@ async def get_course_stats(
     total_lessons = len(all_lessons)
 
     pipeline_students = [
-        {"$match": {"course_id": course_id}},
+        {"$match": {"course_id": course_id, "is_deleted": {"$ne": True}}},
         {"$unwind": "$lesson_completions"},
         {
             "$match": {
@@ -75,7 +75,7 @@ async def get_course_stats(
         except Exception:
             continue
 
-    users_cursor = db.users.find({"_id": {"$in": object_ids}, "role": "student"})
+    users_cursor = db.users.find({"_id": {"$in": object_ids}, "role": "student", "is_deleted": {"$ne": True}})
     users_list = await users_cursor.to_list(length=None)
     id_to_user = {
         str(user["_id"]): {
